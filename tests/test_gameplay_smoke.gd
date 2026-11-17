@@ -38,6 +38,22 @@ func _ready() -> void:
 	add_child(main)
 	athlete = main.get_node("Athlete")
 	line = main.get_node("Slackline")
+	var lab: LabPanel = main.get_node("LabPanel")
+	lab._process(0.0)
+	_check(not lab._hud.text.contains("Tension") and not lab._hud.text.contains("W/S"),
+		"normal HUD hides dense physics and keyboard reference text")
+	var help_label := lab._help_panel.get_child(0) as Label
+	_check(help_label.text.contains("W/S move"),
+		"the full desktop control reference remains available on demand")
+	lab.toggle_pause()
+	_check(get_tree().paused and lab._pause_overlay.visible, "pause opens a usable overlay")
+	lab.toggle_pause()
+	_check(not get_tree().paused and not lab._pause_overlay.visible, "resume returns to live play")
+	_check(lab.restart_requested.is_connected(Callable(main, "restart_game")),
+		"pause-menu restart is wired to reload the current game scene")
+	var audio: AudioDirector = main.get_node("AudioDirector")
+	_check(athlete.contact_started.is_connected(audio._on_contact_started),
+		"optional audio hooks listen to body-to-line contact events")
 	athlete.input.override_enabled = true
 	athlete.state_changed.connect(func(s): states_seen.append(s))
 	# Exercise the real Athlete.launch() -> launched payload -> director path.

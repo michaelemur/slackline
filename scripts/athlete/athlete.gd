@@ -12,6 +12,7 @@ extends RigidBody3D
 
 signal state_changed(new_state: int)
 signal launched(launch_velocity: Vector3)
+signal contact_started(contact_name: String)
 
 enum State { ON_LINE, AIRBORNE, FALLEN }
 
@@ -710,6 +711,7 @@ func reset_to_line(at_s: float) -> void:
 ## back becomes the contact) and the line's recoil has to throw it back up.
 func _enter_pose(id: String, _drop: bool) -> void:
 	pose = id
+	contact_started.emit(id)
 	pose_time = 0.0
 	_push_left = 0.0
 	_pose_contacted = false

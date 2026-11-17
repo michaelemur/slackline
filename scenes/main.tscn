@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://scripts/athlete/athlete.gd" id="4_ath"]
 [ext_resource type="Script" path="res://scripts/camera/camera_rig.gd" id="5_cam"]
 [ext_resource type="Script" path="res://scripts/ui/lab_panel.gd" id="6_lab"]
+[ext_resource type="Script" path="res://scripts/audio/audio_director.gd" id="7_audio"]
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1_main")
@@ -22,3 +23,6 @@ script = ExtResource("5_cam")
 
 [node name="LabPanel" type="CanvasLayer" parent="."]
 script = ExtResource("6_lab")
+
+[node name="AudioDirector" type="Node" parent="."]
+script = ExtResource("7_audio")

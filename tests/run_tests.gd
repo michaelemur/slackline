@@ -17,6 +17,7 @@ const UNIT_SUITES := [
 	"res://tests/test_progression.gd",
 	"res://tests/test_line_config.gd",
 	"res://tests/test_environment_polish.gd",
+	"res://tests/test_gameflow.gd",
 ]
 const SMOKE := "res://tests/test_gameplay_smoke.gd"
 

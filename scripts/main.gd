@@ -9,6 +9,7 @@ extends Node3D
 @onready var athlete: Athlete = $Athlete
 @onready var camera_rig: CameraRig = $CameraRig
 @onready var lab: LabPanel = $LabPanel
+@onready var audio_director: AudioDirector = $AudioDirector
 
 var _crash_mat: MeshInstance3D
 var demo := DemoPilot.new()
@@ -23,6 +24,7 @@ func _ready() -> void:
 	add_child(director)
 	director.bind(athlete, line)
 	director.super_rebound.connect(func(_v): athlete.tricks.say("SUPER REBOUND!"))
+	audio_director.bind(athlete, director)
 	camera_rig.director = director
 	camera_rig.line = line
 	camera_rig.target = athlete
@@ -38,6 +40,7 @@ func _ready() -> void:
 	lab.demo_mode_fn = func(): return {"classic": "classic", "video": "video combo", "rikuto": "Angel/Manson"}.get(demo.mode, demo.mode)
 	lab.preset_requested.connect(load_preset)
 	lab.reset_requested.connect(func(): athlete.reset_to_line(line.chord_length() * 0.5))
+	lab.restart_requested.connect(restart_game)
 
 
 func _add_touch_controls() -> void:
@@ -95,6 +98,11 @@ func load_preset(path: String) -> void:
 	athlete.reset_to_line(line.chord_length() * 0.5)
 	camera_rig.snap()
 	lab.bind(line, athlete)
+
+
+func restart_game() -> void:
+	get_tree().paused = false
+	get_tree().reload_current_scene()
 
 
 func _on_line_rebuilt() -> void:

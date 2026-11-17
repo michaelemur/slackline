@@ -26,8 +26,9 @@ Baseline commit: `ba0cf9e` (pre-roadmap changes)
 | 9 — Line lengths and clearance | Complete | Added 15/30/40m Trickline presets, live environment rebuilds and a tested 10m ground vegetation clearance band. |
 | 10 — Character presentation and visual polish | Complete | Hid the developer COM overlay by default and made motion-reference blending elapsed-time based. |
 | 11 — Beach environment polish | Complete | Added a warm low-sun palette and corrected undefined foam shader interpolation. |
-| 12 — UI, game flow and audio | In progress | Audit HUD readability, touch layout, game flow and available audio assets. |
-| 13–14 | Not started | Mobile optimization, integration and release preparation. |
+| 12 — UI, game flow and audio | Complete | Simplified HUD, added safe-area pause/help controls, restart flow, compact landscape touch layout and optional audio routing. |
+| 13 — Mobile controls and device optimization | In progress | Audit mobile exports, touch behavior and solver/rig costs; device profiling remains unavailable. |
+| 14 — Integration, regression and release | Not started | Final integration, complete regression and release preparation. |
 
 ## Stage 6 details
 
@@ -84,3 +85,12 @@ Baseline commit: `ba0cf9e` (pre-roadmap changes)
 - Fixed the ocean foam shader's reversed `smoothstep` edges. The expression now uses ordered edges, which is defined across the mobile shader backends.
 - Environment configuration suite: **8 passed, 0 failed**. Full regression on the existing project: **1126 passed, 0 failed**. Desktop smoke's worst solver step was **1.37 ms** in that run.
 - Graphical color, foam and silhouette tuning remain unverified while the Godot GUI is unavailable.
+
+## Stage 12 details
+
+- Reduced the always-visible HUD to score, line preset and best combo; moved physics telemetry into the optional Physics Lab. The long control reference is now opened from a help button.
+- Added safe-area-aware HUD placement, a pause overlay with Resume/Restart/Controls, Escape support and scene restart wiring.
+- Compact landscape touch layouts arrange aerial buttons in a small grid while tall portrait layouts keep the larger vertical buttons.
+- Added an optional `AudioDirector` with ambience and gameplay cue routing for contact, takeoff, landing, tricks, combos, Super Rebound and bail. No audio assets exist in the project, so the exported stream slots are empty and no sound is claimed as integrated.
+- Full regression on the existing project: **1154 passed, 0 failed**. Desktop smoke's worst solver step was **0.55 ms** in that run.
+- Graphical layout and actual touch-device testing remain unavailable while Godot's GUI cannot be opened; mobile export/device verification is still outstanding.

@@ -18,6 +18,7 @@ const BINDINGS := {
 	"grab_right": [KEY_PERIOD],
 	"reset": [KEY_R],
 	"toggle_lab": [KEY_F1, KEY_TAB],
+	"pause": [KEY_ESCAPE],
 	"preset_trickline": [KEY_1],
 	"preset_standard": [KEY_2],
 	"preset_trickline_30m": [KEY_3],

@@ -52,3 +52,37 @@ func test_jump_hold_and_trick_tap_map_to_input() -> void:
 	controls._touch_up(5)
 	controls.free()
 	input.free()
+
+
+func test_compact_landscape_action_grid_stays_inside_safe_area() -> void:
+	var input := AthleteInput.new()
+	var controls := TouchControlsScript.new()
+	controls.athlete_input = input
+	controls.safe_rect = Rect2(24, 24, 792, 327)
+	check(controls._trick_radius() == 22.0, "short landscape layout uses compact action buttons")
+	for i in controls.ACTION_LABELS.size():
+		var center: Vector2 = controls._trick_center(i)
+		var radius: float = controls._trick_radius()
+		check(center.x - radius >= controls.safe_rect.position.x
+			and center.x + radius <= controls.safe_rect.end.x
+			and center.y - radius >= controls.safe_rect.position.y
+			and center.y + radius <= controls.safe_rect.end.y,
+			"action %s remains within the landscape safe area" % controls.ACTION_LABELS[i])
+		var pointer := 100 + i
+		controls._touch_down(pointer, center)
+		check(int(controls._trick_pointers.get(pointer, -1)) == i,
+			"compact action %s receives its own tap" % controls.ACTION_LABELS[i])
+		controls._touch_up(pointer)
+	controls.free()
+	input.free()
+
+
+func test_portrait_action_stack_remains_inside_tall_safe_area() -> void:
+	var controls := TouchControlsScript.new()
+	controls.safe_rect = Rect2(20, 24, 350, 790)
+	check(controls._trick_radius() == controls.BUTTON_RADIUS,
+		"tall portrait layout keeps the larger action buttons")
+	var last: Vector2 = controls._trick_center(controls.ACTION_LABELS.size() - 1)
+	check(last.y + controls._trick_radius() <= controls.safe_rect.end.y,
+		"last portrait action button stays on screen")
+	controls.free()

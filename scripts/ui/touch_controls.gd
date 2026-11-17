@@ -48,8 +48,19 @@ func _pump_center() -> Vector2:
 	return Vector2(safe_rect.get_center().x, safe_rect.end.y - BUTTON_RADIUS - 18.0)
 
 func _trick_center(index: int) -> Vector2:
+	if safe_rect.size.y < 560.0:
+		var compact_radius := 22.0
+		var spacing := compact_radius * 2.0 + 14.0
+		var column := index % 2
+		var row := index / 2
+		return Vector2(safe_rect.end.x - 200.0 - column * spacing,
+			safe_rect.position.y + compact_radius + 18.0 + row * spacing)
 	return Vector2(safe_rect.end.x - BUTTON_RADIUS - 18.0,
 		safe_rect.position.y + BUTTON_RADIUS + 18.0 + index * (BUTTON_RADIUS * 2.0 + 12.0))
+
+
+func _trick_radius() -> float:
+	return 22.0 if safe_rect.size.y < 560.0 else BUTTON_RADIUS
 
 func _draw() -> void:
 	if not is_visible_in_tree():
@@ -57,8 +68,11 @@ func _draw() -> void:
 	_draw_pad(_pad_center(true), _move_value, "MOVE")
 	_draw_pad(_pad_center(false), _balance_value, "BALANCE")
 	_draw_button(_pump_center(), "JUMP/TUCK", _pump_pointer >= 0)
+	var trick_radius := _trick_radius()
+	var trick_font := 8 if trick_radius < BUTTON_RADIUS else 11
 	for i in ACTION_LABELS.size():
-		_draw_button(_trick_center(i), ACTION_LABELS[i], _trick_pointers.values().has(i))
+		_draw_button(_trick_center(i), ACTION_LABELS[i], _trick_pointers.values().has(i),
+			trick_radius, trick_font)
 
 func _draw_pad(center: Vector2, value: Vector2, label: String) -> void:
 	draw_circle(center, PAD_RADIUS, Color(0.03, 0.05, 0.08, 0.28))
@@ -67,11 +81,12 @@ func _draw_pad(center: Vector2, value: Vector2, label: String) -> void:
 	draw_string(ThemeDB.fallback_font, center + Vector2(-PAD_RADIUS, PAD_RADIUS + 18.0), label,
 		HORIZONTAL_ALIGNMENT_CENTER, PAD_RADIUS * 2.0, 12, Color(1, 1, 1, 0.85))
 
-func _draw_button(center: Vector2, label: String, active: bool) -> void:
-	draw_circle(center, BUTTON_RADIUS, Color(0.04, 0.07, 0.12, 0.62 if active else 0.38))
-	draw_arc(center, BUTTON_RADIUS, 0.0, TAU, 32, Color(1, 1, 1, 0.7), 2.0)
-	draw_string(ThemeDB.fallback_font, center + Vector2(-BUTTON_RADIUS, 5.0), label,
-		HORIZONTAL_ALIGNMENT_CENTER, BUTTON_RADIUS * 2.0, 11, Color.WHITE)
+func _draw_button(center: Vector2, label: String, active: bool,
+		radius: float = BUTTON_RADIUS, font_size: int = 11) -> void:
+	draw_circle(center, radius, Color(0.04, 0.07, 0.12, 0.62 if active else 0.38))
+	draw_arc(center, radius, 0.0, TAU, 32, Color(1, 1, 1, 0.7), 2.0)
+	draw_string(ThemeDB.fallback_font, center + Vector2(-radius, 5.0), label,
+		HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, font_size, Color.WHITE)
 
 func _input(event: InputEvent) -> void:
 	if athlete_input == null or not visible:
@@ -96,8 +111,10 @@ func _touch_down(index: int, position: Vector2) -> void:
 		_pump_pointer = index
 		athlete_input.touch_pump_held = true
 	else:
+		var radius := _trick_radius()
+		var hit_radius := radius * (1.25 if radius < BUTTON_RADIUS else 1.5)
 		for i in ACTION_LABELS.size():
-			if position.distance_to(_trick_center(i)) <= BUTTON_RADIUS * 1.5:
+			if position.distance_to(_trick_center(i)) <= hit_radius:
 				_trick_pointers[index] = i
 				_update_aerial_actions()
 				break
