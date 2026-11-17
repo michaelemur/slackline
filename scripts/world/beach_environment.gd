@@ -41,7 +41,7 @@ void vertex() {
 void fragment() {
 	float d = clamp((wpos.z - shore_z) / 30.0, 0.0, 1.0);
 	ALBEDO = mix(shallow, deep, d);
-	float foam = smoothstep(1.6, 0.0, wpos.z - shore_z) * (0.6 + 0.4 * sin(wpos.x * 1.7 + TIME * 2.0));
+	float foam = (1.0 - smoothstep(0.0, 1.6, wpos.z - shore_z)) * (0.6 + 0.4 * sin(wpos.x * 1.7 + TIME * 2.0));
 	ALBEDO = mix(ALBEDO, vec3(0.95), clamp(foam, 0.0, 1.0) * 0.8);
 	ROUGHNESS = 0.08;
 	METALLIC = 0.0;
@@ -122,6 +122,18 @@ static func shore_for_line_length(length: float) -> float:
 	return 24.0 + maxf(0.0, length - 15.0) * 0.05
 
 
+static func golden_hour_palette() -> Dictionary:
+	return {
+		"sun_elevation_degrees": 14.0,
+		"sun_color": Color(1.0, 0.72, 0.48),
+		"sky_top": Color(0.12, 0.26, 0.48),
+		"sky_horizon": Color(0.92, 0.53, 0.33),
+		"ground_horizon": Color(0.56, 0.31, 0.25),
+		"ground_bottom": Color(0.14, 0.20, 0.30),
+		"fog": Color(0.82, 0.68, 0.61),
+	}
+
+
 static func clearance_to_line(point: Vector3, length: float) -> float:
 	var closest_x := clampf(point.x, 0.0, maxf(length, 0.0))
 	return Vector2(point.x - closest_x, point.z).length()
@@ -180,14 +192,15 @@ func _process(delta: float) -> void:
 # ---------------------------------------------------------------------------
 
 func _build_sky() -> void:
+	var palette := golden_hour_palette()
 	var env := WorldEnvironment.new()
 	var e := Environment.new()
 	var sky := Sky.new()
 	var sm := ProceduralSkyMaterial.new()
-	sm.sky_top_color = Color(0.16, 0.42, 0.82)
-	sm.sky_horizon_color = Color(0.62, 0.80, 0.95)
-	sm.ground_horizon_color = Color(0.62, 0.80, 0.95)
-	sm.ground_bottom_color = Color(0.20, 0.35, 0.50)
+	sm.sky_top_color = palette["sky_top"]
+	sm.sky_horizon_color = palette["sky_horizon"]
+	sm.ground_horizon_color = palette["ground_horizon"]
+	sm.ground_bottom_color = palette["ground_bottom"]
 	sm.sun_angle_max = 20.0
 	sky.sky_material = sm
 	sky.radiance_size = Sky.RADIANCE_SIZE_64
@@ -199,15 +212,15 @@ func _build_sky() -> void:
 	e.tonemap_exposure = 0.9
 	# cheap aerial perspective: depth fog tinted like the horizon
 	e.fog_enabled = true
-	e.fog_light_color = Color(0.70, 0.84, 0.96)
+	e.fog_light_color = palette["fog"]
 	e.fog_density = 0.0035
 	e.fog_aerial_perspective = 0.6
 	env.environment = e
 	add_child(env)
 	var sun := DirectionalLight3D.new()
 	sun.name = "Sun"
-	sun.rotation_degrees = Vector3(-48, -150, 0)   # sun behind-left of the camera
-	sun.light_color = Color(1.0, 0.95, 0.85)
+	sun.rotation_degrees = Vector3(-float(palette["sun_elevation_degrees"]), -150.0, 0.0)
+	sun.light_color = palette["sun_color"]
 	sun.light_energy = 1.0
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = 45.0      # shadows only where they matter

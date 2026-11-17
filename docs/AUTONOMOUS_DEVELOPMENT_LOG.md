@@ -25,8 +25,9 @@ Baseline commit: `ba0cf9e` (pre-roadmap changes)
 | 8 — Camera and slow motion | Complete | Hard tricks blend to an opposite-side, low-angle hero shot; camera eases out before landing; short flights skip slow motion if there is not enough airtime for a safe envelope. |
 | 9 — Line lengths and clearance | Complete | Added 15/30/40m Trickline presets, live environment rebuilds and a tested 10m ground vegetation clearance band. |
 | 10 — Character presentation and visual polish | Complete | Hid the developer COM overlay by default and made motion-reference blending elapsed-time based. |
-| 11 — Beach environment polish | In progress | Audit the procedural beach for visual quality, scene cost and environment motion. |
-| 12–14 | Not started | UI/game flow/audio, mobile optimization, integration/release. |
+| 11 — Beach environment polish | Complete | Added a warm low-sun palette and corrected undefined foam shader interpolation. |
+| 12 — UI, game flow and audio | In progress | Audit HUD readability, touch layout, game flow and available audio assets. |
+| 13–14 | Not started | Mobile optimization, integration and release preparation. |
 
 ## Stage 6 details
 
@@ -76,3 +77,10 @@ Baseline commit: `ba0cf9e` (pre-roadmap changes)
 - Focused character suite: **12 passed, 0 failed**. Full suite on the existing project: **1118 passed, 0 failed**.
 - The gameplay smoke test's p99 solver-step check remained under 8 ms; the highest single step in this run was 7.13 ms. This is a desktop headless observation, not a frame-time or mobile benchmark.
 - The model and pose transitions have only been verified through rig tests so far. A new `open -a` attempt returned without surfacing a Godot window to desktop automation, so graphical inspection remains blocked.
+
+## Stage 11 details
+
+- Introduced a shared golden-hour palette for the procedural sky, fog and low sun, keeping the existing beach and athlete presentation architecture.
+- Fixed the ocean foam shader's reversed `smoothstep` edges. The expression now uses ordered edges, which is defined across the mobile shader backends.
+- Environment configuration suite: **8 passed, 0 failed**. Full regression on the existing project: **1126 passed, 0 failed**. Desktop smoke's worst solver step was **1.37 ms** in that run.
+- Graphical color, foam and silhouette tuning remain unverified while the Godot GUI is unavailable.
