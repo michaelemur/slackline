@@ -28,7 +28,7 @@ Baseline commit: `ba0cf9e` (pre-roadmap changes)
 | 11 — Beach environment polish | Complete | Added a warm low-sun palette and corrected undefined foam shader interpolation. |
 | 12 — UI, game flow and audio | Complete | Simplified HUD, added safe-area pause/help controls, restart flow, compact landscape touch layout and optional audio routing. |
 | 13 — Mobile controls and device optimization | Complete with device validation blocked | Verified mobile renderer and touch layouts; batched repeated beach geometry and profiled desktop headless workloads. Export templates, Android SDK, full Xcode and a device are unavailable. |
-| 14 — Integration, regression and release | In progress | Final integration, complete regression and release preparation. |
+| 14 — Integration, regression and release | Complete with release validation blocked | Final integration and full regression pass; graphical, export and device sign-off remain unavailable. See `docs/RELEASE_READINESS_REPORT.md`. |
 
 ## Stage 6 details
 
@@ -103,3 +103,10 @@ Baseline commit: `ba0cf9e` (pre-roadmap changes)
 - Added an environment regression for bounded renderable node counts, retained instances and moving cloud groups at 15m, 30m and 40m.
 - Full regression: **1223 passed, 0 failed**. Godot still reports renderer/ObjectDB resource leak warnings at shutdown; this run did not isolate their origin.
 - Mobile export and device verification remain blocked: no export presets/templates, Android SDK/ADB, full Xcode installation or test device was available. `project.godot` is mobile-renderer configured, but this is not equivalent to a buildable mobile release.
+
+## Stage 14 details
+
+- Ran the complete regression suite against the actual project after integration: **1223 passed, 0 failed**. The gameplay smoke completed 34 jumps and 30 landings; its worst solver step was **0.66 ms** in this desktop headless run.
+- `git diff --check` passed. The full project has a new Stage 13 recovery checkpoint and a Stage 13 implementation commit.
+- Made a fresh desktop launch attempt. The Godot process appeared in the desktop app inventory, but the desktop automation could not acquire its app window; earlier Launch Services and direct GUI launch attempts also failed. No visual playtest is claimed.
+- Release readiness and remaining blockers are listed in `docs/RELEASE_READINESS_REPORT.md`. The project remains a tested development build, not a verified mobile release.
