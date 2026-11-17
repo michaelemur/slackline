@@ -372,9 +372,9 @@ func post_line_step(dt: float) -> void:
 		var u := tricks.ref_phase()  # flight phase: slow-motion source timing does not matter
 		var r := tricks.ref
 		visual.set_reference_limbs(deg_to_rad(r.sample("hip", u)), deg_to_rad(r.sample("knee", u)),
-			deg_to_rad(r.sample("shoulder", u)), deg_to_rad(r.sample("elbow", u)), 1.0)
+			deg_to_rad(r.sample("shoulder", u)), deg_to_rad(r.sample("elbow", u)), 1.0, dt)
 	else:
-		visual.set_reference_limbs(0.0, 0.0, 0.0, 0.0, 0.0)
+		visual.set_reference_limbs(0.0, 0.0, 0.0, 0.0, 0.0, dt)
 	# The tuck that sets the inertia (I_tuck) is drawn at the same depth:
 	# hips ~120 deg, knees ~130 deg flexed at full tuck.
 	visual.set_tuck(tricks.tuck if state == State.AIRBORNE else 0.0)

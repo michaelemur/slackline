@@ -11,7 +11,8 @@ const SHIN := 0.45
 const LEG_LEN := THIGH + SHIN
 const COM_HEIGHT := 1.0      # pivot for flips (approx. navel)
 
-var show_com: bool = true
+## Developer-only COM/plumb overlay. Toggle with G; hidden during normal play.
+var show_com: bool = false
 
 var _trick: Node3D       # flips/spins about the centre of mass
 var _pose: Node3D        # line-trick body positions (butt/chest/back)
@@ -164,8 +165,9 @@ func set_tuck(t: float) -> void:
 
 ## Limb angles from a motion-capture reference (rad): hip and knee flexion,
 ## shoulder flexion (arm forward/up), elbow flexion. w = blend weight.
-func set_reference_limbs(hip: float, knee: float, shoulder: float, elbow: float, w: float) -> void:
-	_ref_w = move_toward(_ref_w, w, 0.25)
+func set_reference_limbs(hip: float, knee: float, shoulder: float, elbow: float, w: float,
+		dt: float = 1.0 / 60.0) -> void:
+	_ref_w = move_toward(_ref_w, clampf(w, 0.0, 1.0), maxf(dt, 0.0) * 6.0)
 	if _ref_w <= 0.0 or _thigh_l == null:
 		if character != null:
 			character.ref_arm_w = 0.0

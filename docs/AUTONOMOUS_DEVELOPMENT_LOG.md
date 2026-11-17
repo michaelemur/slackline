@@ -24,8 +24,9 @@ Baseline commit: `ba0cf9e` (pre-roadmap changes)
 | 7 — Combos, scoring and Super Rebound | Complete | Earned energy meter feeds a temporary physical actuator increase on the next push. |
 | 8 — Camera and slow motion | Complete | Hard tricks blend to an opposite-side, low-angle hero shot; camera eases out before landing; short flights skip slow motion if there is not enough airtime for a safe envelope. |
 | 9 — Line lengths and clearance | Complete | Added 15/30/40m Trickline presets, live environment rebuilds and a tested 10m ground vegetation clearance band. |
-| 10 — Character presentation and visual polish | In progress | Audit current character presentation and identify focused improvements that preserve the procedural rig and physics. |
-| 11–14 | Not started | Beach polish, UI/game flow/audio, mobile optimization, integration/release. |
+| 10 — Character presentation and visual polish | Complete | Hid the developer COM overlay by default and made motion-reference blending elapsed-time based. |
+| 11 — Beach environment polish | In progress | Audit the procedural beach for visual quality, scene cost and environment motion. |
+| 12–14 | Not started | UI/game flow/audio, mobile optimization, integration/release. |
 
 ## Stage 6 details
 
@@ -64,5 +65,14 @@ Baseline commit: `ba0cf9e` (pre-roadmap changes)
 - Added a compact Physics Lab span selector and keyboard shortcuts (1/3/4 for the three Trickline spans; 2 remains Standard).
 - Line rebuild signals now recenter/rebuild the beach layout, shoreline, vegetation and camera axis. The Physics Lab's custom-length slider follows the same path.
 - Palms, bushes and procedural grass are positioned using planar distance from the finite line segment, with a ten-metre band plus conservative footprint radii.
-- Full suite on the existing project: **1114 passed, 0 failed**. Smoke test switched the live scene through 30m, 40m and back to 15m. Highest observed desktop solver step in that run was **0.90 ms**; this is not a whole-frame or mobile benchmark.
+- Regression suite: **1114 passed, 0 failed**. Smoke test switched the live scene through 30m, 40m and back to 15m. Highest observed desktop solver step across those configurations was **3.27 ms**; this is not a whole-frame or mobile benchmark.
 - The clearance test covers authored and procedural ground vegetation. Trajectory/camera obstruction still needs graphical review once the Godot GUI can launch.
+
+## Stage 10 details
+
+- The character presentation uses the existing 53-bone skinned GLB, procedural pose rig, two-bone leg IK, per-joint spring dampers and motion-reference blending; no replacement rig was needed.
+- The center-of-mass marker and plumb line are developer diagnostics and now default to hidden. The existing G toggle still exposes them.
+- Motion-reference fade-in/out now advances from physics `dt` rather than a fixed amount per tick, so equal elapsed time produces the same blend at 60 and 120 Hz.
+- Focused character suite: **12 passed, 0 failed**. Full suite on the existing project: **1118 passed, 0 failed**.
+- The gameplay smoke test's p99 solver-step check remained under 8 ms; the highest single step in this run was 7.13 ms. This is a desktop headless observation, not a frame-time or mobile benchmark.
+- The model and pose transitions have only been verified through rig tests so far. A new `open -a` attempt returned without surfacing a Godot window to desktop automation, so graphical inspection remains blocked.

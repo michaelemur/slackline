@@ -21,9 +21,29 @@ func test_character_loads_and_hides_capsules() -> void:
 	var v := _make()
 	check(v.character != null, "athlete model loaded and mapped")
 	check(v.character.skel.get_bone_count() == 53, "53-bone rig")
+	check(not v.show_com and not v._com_marker.visible,
+		"developer COM marker is hidden during normal play")
+	v.show_com = true
+	v.set_body(0.0, 0.0, 0.0, 0.0, 0.0, AthleteVisual.COM_HEIGHT)
+	check(v._com_marker.visible, "COM marker remains available for diagnostics")
 	v.set_use_character(false)
 	check(not v.character.visible, "V toggles back to capsules")
 	v.free()
+
+
+func test_motion_reference_blend_uses_elapsed_time() -> void:
+	var at_60 := _make()
+	var at_120 := _make()
+	for i in 6:
+		at_60.set_reference_limbs(0.0, 0.0, 0.0, 0.0, 1.0, 1.0 / 60.0)
+	for i in 12:
+		at_120.set_reference_limbs(0.0, 0.0, 0.0, 0.0, 1.0, 1.0 / 120.0)
+	check(absf(at_60._ref_w - at_120._ref_w) < 0.001,
+		"mocap blend reaches the same weight after equal time at 60 and 120 Hz")
+	check(at_60._ref_w > 0.5 and at_60._ref_w < 0.7,
+		"reference pose eases in over a short readable transition")
+	at_60.free()
+	at_120.free()
 
 
 func test_feet_pinned_on_line_when_standing_and_crouched() -> void:
