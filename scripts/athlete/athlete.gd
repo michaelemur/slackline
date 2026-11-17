@@ -467,9 +467,12 @@ func _update_airborne(dt: float) -> void:
 	if air_time > 0.15 and vy < 0.0 and feet.y < line.ground_height + 0.25:
 		last_landing_failure_reason = "missed line; ground clearance reached"
 		fall(last_landing_failure_reason)
-	elif air_time > 6.0:
-		last_landing_failure_reason = "airborne timeout"
-		fall(last_landing_failure_reason)
+	elif not global_position.is_finite() or not linear_velocity.is_finite():
+		# A bad numeric state is the only airborne watchdog: valid high flights
+		# remain governed by gravity and physical line/ground contact, with no
+		# arbitrary flight-duration or altitude cutoff.
+		last_landing_failure_reason = "non-finite airborne state"
+		reset_to_line(line.chord_length() * 0.5)
 
 
 func _update_fallen(dt: float) -> void:

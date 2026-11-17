@@ -59,6 +59,14 @@ func test_high_jump_pulls_back_smoothly() -> void:
 	check(d.shot["pull"] < 0.05, "camera returns after landing (%.2f)" % d.shot["pull"])
 
 
+func test_camera_framing_distance_scales_without_an_altitude_ceiling() -> void:
+	var low := CameraRig.altitude_framing_distance(6.0, 2.0)
+	var high := CameraRig.altitude_framing_distance(6.0, 20.0)
+	var higher := CameraRig.altitude_framing_distance(6.0, 200.0)
+	check(is_equal_approx(low, 6.0), "ordinary jumps retain the normal follow distance")
+	check(high > low and higher > high, "camera framing keeps expanding for high jumps")
+
+
 func test_trick_moves_camera_slightly() -> void:
 	var d := _dir()
 	d.best_launch = 10.0

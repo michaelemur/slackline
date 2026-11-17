@@ -102,6 +102,9 @@ func _place() -> void:
 		yaw += 35.0 * sh["close"]
 		d *= 1.0 - 0.12 * sh["combo"]         # combo: subtle zoom
 		lh -= 0.2 * sh["close"]
+	var altitude := _target_altitude()
+	d = maxf(d, altitude_framing_distance(distance, altitude))
+	h += maxf(0.0, altitude - 1.6) * 0.08
 	var back := -_forward.rotated(Vector3.UP, deg_to_rad(yaw))
 	global_position = _focus + back * d + Vector3.UP * h
 	global_position.y = maxf(global_position.y, 0.4)   # never below the sand
@@ -113,3 +116,16 @@ func _place() -> void:
 	var a := tr * tr
 	camera.position = Vector3(sin(_rt * 37.0) + 0.5 * sin(_rt * 71.0), cos(_rt * 41.0) + 0.5 * sin(_rt * 59.0), 0.0) * 0.08 * a
 	camera.rotation = Vector3(0.0, 0.0, sin(_rt * 29.0) * 0.03 * a)
+
+
+static func altitude_framing_distance(base_distance: float, altitude: float) -> float:
+	## Grow framing without a height ceiling; the line remains visible at high
+	## rebounds while low jumps keep the configured follow distance.
+	return maxf(base_distance, (maxf(0.0, altitude) + 2.0) * 1.3)
+
+
+func _target_altitude() -> float:
+	if target == null or line == null:
+		return 0.0
+	var s: float = clampf(line.project_s(target.global_position), 0.3, line.chord_length() - 0.3)
+	return maxf(0.0, target.global_position.y - line.sample_world(s).y)

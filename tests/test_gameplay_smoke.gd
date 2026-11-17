@@ -30,6 +30,7 @@ var _contact_jumps_before: int = 0
 var _contact_target_recorded: bool = false
 var _stall_jumps_before: int = 0
 var _stall_score_before: int = 0
+var _high_jump_started := false
 
 
 func _ready() -> void:
@@ -266,4 +267,15 @@ func _physics_process(delta: float) -> void:
 		_check(p99 < 8.0, "solver step under 8 ms (p99 %.2f ms, worst %.2f ms)" % [p99, _worst_ms])
 		print("    smoke: apex %.2f m, worst solver %.2f ms, jumps %d, landings %d"
 			% [_max_air_y, _worst_ms, athlete.jumps, athlete.landings])
+		# A deliberate 35 m/s launch verifies that the former 6 s watchdog no
+		# longer imposes an artificial maximum on physically valid flight.
+		main.demo.enabled = false
+		athlete.reset_to_line(line.chord_length() * 0.5)
+		athlete.launch(Vector3.UP * 35.0)
+		_high_jump_started = true
+	if _high_jump_started and athlete.air_time >= 6.05:
+		_check(athlete.state == Athlete.State.AIRBORNE
+			and athlete.global_position.y > line.ground_height + 5.0,
+			"valid high rebound remains airborne beyond six seconds (state %s, y %.2f)"
+			% [athlete.state_name(), athlete.global_position.y])
 		finished.emit(passes, failures)
