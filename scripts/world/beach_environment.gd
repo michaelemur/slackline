@@ -332,10 +332,11 @@ func _palm(base: Vector3, h: float, trunk_mat: Material, leaf_mat: Material, fro
 	var lean := _rng.randf_range(0.6, 1.8)
 	var segs := 7
 	var prev := Vector3.ZERO
+	var trunk_builder := SurfaceTool.new()
+	trunk_builder.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for i in range(segs):
 		var t := float(i + 1) / segs
 		var p := Vector3(lean * t * t, h * t, 0.0)
-		var seg := MeshInstance3D.new()
 		var cm := CylinderMesh.new()
 		var r := lerpf(0.22, 0.13, t)
 		cm.top_radius = r * 0.95
@@ -343,36 +344,46 @@ func _palm(base: Vector3, h: float, trunk_mat: Material, leaf_mat: Material, fro
 		cm.height = prev.distance_to(p) + 0.05
 		cm.radial_segments = 8
 		cm.rings = 1
-		seg.mesh = cm
-		seg.material_override = trunk_mat
-		seg.position = (prev + p) * 0.5
 		var dir := (p - prev).normalized()
-		seg.basis = Basis(Quaternion(Vector3.UP, dir))
-		palm.add_child(seg)
+		var segment_basis := Basis(Quaternion(Vector3.UP, dir))
+		trunk_builder.append_from(cm, 0, Transform3D(segment_basis, (prev + p) * 0.5))
 		prev = p
+	var trunk := MeshInstance3D.new()
+	trunk.mesh = trunk_builder.commit()
+	trunk.material_override = trunk_mat
+	palm.add_child(trunk)
 	# crown: fronds radiating out, drooping
 	var crown := Node3D.new()
 	crown.position = prev
 	palm.add_child(crown)
 	var n := 9
+	var frond_builder := SurfaceTool.new()
+	frond_builder.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for i in range(n):
-		var f := MeshInstance3D.new()
-		f.mesh = frond
-		f.material_override = leaf_mat
-		f.rotation = Vector3(0.0, TAU * i / n + _rng.randf_range(-0.2, 0.2), _rng.randf_range(-0.25, 0.15))
-		f.scale = Vector3.ONE * _rng.randf_range(0.85, 1.15)
-		crown.add_child(f)
+		var rotation := Vector3(0.0, TAU * i / n + _rng.randf_range(-0.2, 0.2), _rng.randf_range(-0.25, 0.15))
+		var scale := Vector3.ONE * _rng.randf_range(0.85, 1.15)
+		frond_builder.append_from(frond, 0, Transform3D(Basis.from_euler(rotation).scaled(scale), Vector3.ZERO))
+	var fronds := MeshInstance3D.new()
+	fronds.mesh = frond_builder.commit()
+	fronds.material_override = leaf_mat
+	crown.add_child(fronds)
+	var coconut_mesh := SphereMesh.new()
+	coconut_mesh.radius = 0.12
+	coconut_mesh.height = 0.24
+	coconut_mesh.radial_segments = 8
+	coconut_mesh.rings = 4
+	var coconuts := MultiMesh.new()
+	coconuts.transform_format = MultiMesh.TRANSFORM_3D
+	coconuts.mesh = coconut_mesh
+	coconuts.instance_count = 3
 	for i in range(3):
-		var c := MeshInstance3D.new()
-		var sp := SphereMesh.new()
-		sp.radius = 0.12
-		sp.height = 0.24
-		sp.radial_segments = 8
-		sp.rings = 4
-		c.mesh = sp
-		c.material_override = nut_mat
-		c.position = Vector3(cos(i * 2.1) * 0.18, -0.2, sin(i * 2.1) * 0.18)
-		crown.add_child(c)
+		var c := Vector3(cos(i * 2.1) * 0.18, -0.2, sin(i * 2.1) * 0.18)
+		coconuts.set_instance_transform(i, Transform3D(Basis.IDENTITY, c))
+	var coconut_instances := MultiMeshInstance3D.new()
+	coconut_instances.multimesh = coconuts
+	coconut_instances.material_override = nut_mat
+	coconut_instances.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	crown.add_child(coconut_instances)
 
 
 ## One frond: a drooping strip with leaflets, UV.x 0 (stem) -> 1 (tip).
@@ -417,17 +428,27 @@ func _build_plants() -> void:
 	bush.height = 2.0
 	bush.radial_segments = 10
 	bush.rings = 5
+	var bush_transforms: Array[Transform3D] = []
 	for p in plant_spots_for_length(line_length):
 		if not is_clear_of_line(p, line_length, BUSH_FOOTPRINT_RADIUS):
 			continue
 		for k in range(3):
-			var b := MeshInstance3D.new()
-			b.mesh = bush
-			b.material_override = bush_mat
 			var s := _rng.randf_range(0.5, 1.0)
-			b.scale = Vector3(s * 1.3, s * 0.8, s * 1.2)
-			b.position = p + Vector3(_rng.randf_range(-1, 1), s * 0.3, _rng.randf_range(-1, 1))
-			add_child(b)
+			var bush_scale := Vector3(s * 1.3, s * 0.8, s * 1.2)
+			var bush_position := p + Vector3(_rng.randf_range(-1, 1), s * 0.3, _rng.randf_range(-1, 1))
+			bush_transforms.append(Transform3D(Basis.IDENTITY.scaled(bush_scale), bush_position))
+	if not bush_transforms.is_empty():
+		var bush_multimesh := MultiMesh.new()
+		bush_multimesh.transform_format = MultiMesh.TRANSFORM_3D
+		bush_multimesh.mesh = bush
+		bush_multimesh.instance_count = bush_transforms.size()
+		for i in range(bush_transforms.size()):
+			bush_multimesh.set_instance_transform(i, bush_transforms[i])
+		var bushes := MultiMeshInstance3D.new()
+		bushes.multimesh = bush_multimesh
+		bushes.material_override = bush_mat
+		bushes.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(bushes)
 	# grass tufts: one MultiMesh, swaying with the leaf shader
 	var leaf_mat := ShaderMaterial.new()
 	var sh := Shader.new()
@@ -479,14 +500,20 @@ func _build_clouds() -> void:
 		var c := Node3D.new()
 		c.position = Vector3(_rng.randf_range(-150, line_length + 130.0), _rng.randf_range(45, 70), _rng.randf_range(160, 260))
 		c.set_meta("speed", _rng.randf_range(0.6, 1.4))
+		var cloud_multimesh := MultiMesh.new()
+		cloud_multimesh.transform_format = MultiMesh.TRANSFORM_3D
+		cloud_multimesh.mesh = sp
+		cloud_multimesh.instance_count = 4
 		for k in range(4):
-			var puff := MeshInstance3D.new()
-			puff.mesh = sp
-			puff.material_override = mat
-			puff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			var r := _rng.randf_range(5, 9)
-			puff.scale = Vector3(r * 1.6, r * 0.6, r)
-			puff.position = Vector3(k * 7.0 - 10.0, _rng.randf_range(-1.5, 2.0), _rng.randf_range(-2, 2))
-			c.add_child(puff)
+			var puff_scale := Vector3(r * 1.6, r * 0.6, r)
+			var puff_position := Vector3(k * 7.0 - 10.0, _rng.randf_range(-1.5, 2.0), _rng.randf_range(-2, 2))
+			cloud_multimesh.set_instance_transform(k,
+				Transform3D(Basis.IDENTITY.scaled(puff_scale), puff_position))
+		var cloud_puffs := MultiMeshInstance3D.new()
+		cloud_puffs.multimesh = cloud_multimesh
+		cloud_puffs.material_override = mat
+		cloud_puffs.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		c.add_child(cloud_puffs)
 		add_child(c)
 		_clouds.append(c)

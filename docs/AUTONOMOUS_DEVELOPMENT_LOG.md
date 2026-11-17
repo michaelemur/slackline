@@ -27,8 +27,8 @@ Baseline commit: `ba0cf9e` (pre-roadmap changes)
 | 10 — Character presentation and visual polish | Complete | Hid the developer COM overlay by default and made motion-reference blending elapsed-time based. |
 | 11 — Beach environment polish | Complete | Added a warm low-sun palette and corrected undefined foam shader interpolation. |
 | 12 — UI, game flow and audio | Complete | Simplified HUD, added safe-area pause/help controls, restart flow, compact landscape touch layout and optional audio routing. |
-| 13 — Mobile controls and device optimization | In progress | Audit mobile exports, touch behavior and solver/rig costs; device profiling remains unavailable. |
-| 14 — Integration, regression and release | Not started | Final integration, complete regression and release preparation. |
+| 13 — Mobile controls and device optimization | Complete with device validation blocked | Verified mobile renderer and touch layouts; batched repeated beach geometry and profiled desktop headless workloads. Export templates, Android SDK, full Xcode and a device are unavailable. |
+| 14 — Integration, regression and release | In progress | Final integration, complete regression and release preparation. |
 
 ## Stage 6 details
 
@@ -94,3 +94,12 @@ Baseline commit: `ba0cf9e` (pre-roadmap changes)
 - Added an optional `AudioDirector` with ambience and gameplay cue routing for contact, takeoff, landing, tricks, combos, Super Rebound and bail. No audio assets exist in the project, so the exported stream slots are empty and no sound is claimed as integrated.
 - Full regression on the existing project: **1154 passed, 0 failed**. Desktop smoke's worst solver step was **0.55 ms** in that run.
 - Graphical layout and actual touch-device testing remain unavailable while Godot's GUI cannot be opened; mobile export/device verification is still outstanding.
+
+## Stage 13 details
+
+- The project already targets Godot's Mobile renderer, has mobile texture compression enabled, and uses the existing adaptive touch layout with safe-area positioning. Touch bounds and compact landscape/portrait layouts are covered by the full automated suite.
+- Reduced beach scenery draw candidates by batching the seven palm trunk segments and nine fronds into one mesh each, and instancing coconuts, bushes and cloud puffs. Renderable scenery nodes fell from **272 (271 MeshInstance3D + 1 MultiMeshInstance3D) to 52 (32 MeshInstance3D + 20 MultiMeshInstance3D)**; 260 grass tufts remain instanced. The environment still rebuilds for all three line presets.
+- Desktop headless profile after batching: 15m line solver median/p95/p99/max **0.246/0.278/0.305/0.376 ms**; 30m **0.367/0.451/0.544/0.720 ms**; 40m **0.485/0.509/0.592/0.791 ms**. 53-bone rig update median/p95/p99/max **0.187/0.231/0.271/0.347 ms**. Beach construction measured **8.13 ms** at 15m; preset rebuild measured **6.39 ms** at 30m and **6.46 ms** at 40m. These are desktop headless timings, not FPS, battery, thermal or device benchmarks.
+- Added an environment regression for bounded renderable node counts, retained instances and moving cloud groups at 15m, 30m and 40m.
+- Full regression: **1223 passed, 0 failed**. Godot still reports renderer/ObjectDB resource leak warnings at shutdown; this run did not isolate their origin.
+- Mobile export and device verification remain blocked: no export presets/templates, Android SDK/ADB, full Xcode installation or test device was available. `project.godot` is mobile-renderer configured, but this is not equivalent to a buildable mobile release.
