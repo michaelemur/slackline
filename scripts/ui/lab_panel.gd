@@ -20,6 +20,7 @@ var _rhythm: Label
 var demo_enabled_fn: Callable
 var demo_mode_fn: Callable
 var _balance_bar: ProgressBar
+var _energy_bar: ProgressBar
 var _panel: PanelContainer
 var _sliders: VBoxContainer
 var _rebuild_pending: bool = false
@@ -82,6 +83,7 @@ func _process(_delta: float) -> void:
 	else:
 		_trick_label.text = ""
 	_balance_bar.value = clampf(athlete.balance.theta / athlete.balance.fall_angle, -1.0, 1.0)
+	_energy_bar.value = athlete.rebound_meter.charge
 	# Rhythm cue: squat while the line is high, push while it is low.
 	var dev := athlete.bounce_dev()
 	if athlete.state != Athlete.State.ON_LINE or absf(dev) < 0.03:
@@ -116,6 +118,17 @@ func _build_hud() -> void:
 	_balance_bar.show_percentage = false
 	_balance_bar.custom_minimum_size = Vector2(260, 14)
 	box.add_child(_balance_bar)
+	var energy_label := Label.new()
+	energy_label.text = "SUPER REBOUND ENERGY"
+	energy_label.add_theme_color_override("font_color", Color(1.0, 0.82, 0.25))
+	box.add_child(energy_label)
+	_energy_bar = ProgressBar.new()
+	_energy_bar.min_value = 0.0
+	_energy_bar.max_value = 1.0
+	_energy_bar.value = 0.0
+	_energy_bar.show_percentage = false
+	_energy_bar.custom_minimum_size = Vector2(260, 12)
+	box.add_child(_energy_bar)
 	_rhythm = Label.new()
 	_rhythm.add_theme_color_override("font_color", Color(0.6, 1.0, 1.0))
 	box.add_child(_rhythm)

@@ -15,6 +15,8 @@ signal launched(launch_velocity: Vector3)
 
 enum State { ON_LINE, AIRBORNE, FALLEN }
 
+const ReboundMeterScript := preload("res://scripts/athlete/rebound_meter.gd")
+
 @export var athlete_mass: float = 75.0
 @export var walk_speed: float = 0.9               # m/s along the line
 ## Leaning into the takeoff (W/S held) sends you along the line.
@@ -36,6 +38,9 @@ var input: AthleteInput
 var balance := BalanceController.new()
 var leg := LegModel.new()
 var tricks := TrickController.new()
+var rebound_meter = ReboundMeterScript.new()
+var _super_rebound_active := false
+var _energy_awarded_this_landing := false
 # --- arm swing (sagittal) ---
 ## Both arms swing as one ~7.4 kg pair (2 x 4.9 % body mass) about the
 ## shoulders, COM 0.33 m out. Down while sinking into the line, up while
@@ -129,6 +134,7 @@ var last_landing_failure_reason: String = ""
 
 
 func _ready() -> void:
+	tricks.landed.connect(_on_tricks_landed)
 	for id in MOCAP_REFS:
 		var r := MotionReference.load_json(MOCAP_REFS[id])
 		if r != null:
@@ -241,6 +247,7 @@ func pre_line_step(dt: float) -> void:
 		leg.s = s
 		leg.lateral_force = _lateral_force if pose == "" else 0.0
 		leg.target = _leg_command(dt)
+		_update_rebound_boost()
 		# the extra give of a braced/sloppy landing lasts that one contact
 		if leg.leg_speed(line.solver) > 0.0:
 			leg.c_leg = move_toward(leg.c_leg, 1000.0, 6000.0 * dt)
@@ -275,6 +282,24 @@ func _leg_command(dt: float) -> float:
 		return leg.l_max + 0.05      # drive to full extension
 	_dip_target = stance
 	return stance
+
+
+func _update_rebound_boost() -> void:
+	if _super_rebound_active and _push_left <= 0.0 and _rising_from == "":
+		_super_rebound_active = false
+	if not _super_rebound_active and rebound_meter.is_ready() and (_push_left > 0.0 or _rising_from != ""):
+		_super_rebound_active = rebound_meter.consume() > 0.0
+		if _super_rebound_active:
+			tricks.say("SUPER REBOUND CHARGED!")
+	leg.rebound_boost = 1.0 if _super_rebound_active else 0.0
+
+
+func _on_tricks_landed(names: Array, points: int) -> void:
+	if state != State.AIRBORNE or tricks.last_outcome != "clean" or names.is_empty():
+		return
+	var gain := 0.18 + minf(float(points) / 10000.0, 0.35) + 0.04 * maxf(0.0, names.size() - 1.0)
+	rebound_meter.earn(gain)
+	_energy_awarded_this_landing = true
 
 
 ## Steps the line; while standing on it, the leg exchanges forces with the
@@ -486,6 +511,7 @@ func _update_fallen(dt: float) -> void:
 func launch(v: Vector3) -> void:
 	if state != State.ON_LINE:
 		return
+	_energy_awarded_this_landing = false
 	# Leaving the line from a butt/chest/back position completes that bounce.
 	var contact_source := pose if pose != "" else _rising_from
 	_launch_pose = contact_source
@@ -522,6 +548,8 @@ func launch(v: Vector3) -> void:
 	_pending_velocity = v
 	_pending_angular = Vector3.ZERO
 	linear_velocity = v
+	_super_rebound_active = false
+	leg.rebound_boost = 0.0
 	launched.emit(v)
 	_set_state(State.AIRBORNE)
 	var from := _launch_pose if _launch_pose != "" else _rising_from
@@ -561,6 +589,9 @@ func land(at_s: float, lateral_offset: float) -> void:
 	if state != State.AIRBORNE:
 		return
 	last_jump_height = _apex_y - _launch_y
+	if tricks.last_outcome == "clean" and not _energy_awarded_this_landing:
+		rebound_meter.earn(0.08)
+	_energy_awarded_this_landing = false
 	landings += 1
 	s = clampf(at_s, end_margin, line.chord_length() - end_margin)
 	var v := linear_velocity

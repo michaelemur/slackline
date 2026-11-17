@@ -25,6 +25,8 @@ var l_min: float = 0.55             # deepest squat COM height
 var l_pose: float = 0.15            # COM height sitting/lying on the line
 var k_leg: float = 30000.0          # N/m
 var assist_force: float = 0.0       # N, arm-swing reaction (set by the athlete)
+var rebound_boost: float = 0.0      # 0..1; improves the next physical push limit
+var rebound_boost_gain: float = 0.20
 var c_leg: float = 1000.0           # N*s/m (below ~600 the foot-line mode rings)
 var f_max: float = 2600.0           # N, max concentric push (~3.5 BW, assumption)
 var eccentric_ratio: float = 1.5
@@ -91,7 +93,7 @@ func pre_substep(solver: SlacklineSolver, dt: float) -> void:
 	active_target += (target - active_target) * minf(1.0, dt / activation_tau)
 	# Muscles always damp; below ~600 N*s/m the explicit foot coupling rings.
 	var f := k_leg * (active_target - l) - maxf(c_leg, 600.0) * ldot
-	var fm := f_max * strength
+	var fm := f_max * strength * (1.0 + clampf(rebound_boost, 0.0, 1.0) * rebound_boost_gain)
 	var cap := fm * eccentric_ratio
 	if ldot > 0.0:
 		cap = fm * maxf(0.0, 1.0 - ldot / v_max)

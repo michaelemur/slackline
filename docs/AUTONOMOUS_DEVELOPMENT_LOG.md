@@ -22,7 +22,8 @@ Baseline commit: `ba0cf9e` (pre-roadmap changes)
 | 5 — Body shape, grabs, biomechanics | Complete | Tuck changes inertia independently of rotation; left/right grabs are independent; tuck no longer automatically poses hands onto shins. |
 | 6 — Natural jump height and line/camera behavior | Complete | Removed the six-second airborne cutoff; valid flight is limited by physical contact and numeric-state recovery. Camera framing distance scales continuously with altitude. No vertical launch clamp or injected jump impulse was found. |
 | 7 — Combos, scoring and Super Rebound | In progress | Existing trick scoring and camera Super Rebound detection exist; an earned energy meter and physical rebound enhancement remain to be audited/implemented. |
-| 8–14 | Not started | Camera cinematics, line lengths/clearance, character/environment/UI/audio, mobile optimization, integration/release. |
+| 8 — Camera and slow motion | In progress | Existing follow/framing, slow motion, and Super Rebound camera detection are present; cinematic shot staging and broader test coverage are next. |
+| 9–14 | Not started | Line lengths/clearance, character/environment/UI/audio, mobile optimization, integration/release. |
 
 ## Stage 6 details
 
@@ -38,3 +39,11 @@ Baseline commit: `ba0cf9e` (pre-roadmap changes)
 - No iOS/Android device or signing setup was available; mobile performance/export is unverified.
 - Godot test shutdown reports existing renderer resource-leak warnings. Tests pass, but those diagnostics remain to investigate.
 - The high-flight regression is a synthetic validation of flight/state and camera framing, not a measured human-achievable jump height.
+
+## Stage 7 details
+
+- Files changed: `scripts/athlete/rebound_meter.gd`, `scripts/athlete/athlete.gd`, `scripts/athlete/leg_model.gd`, `scripts/ui/lab_panel.gd`, `tests/test_progression.gd`, and `tests/run_tests.gd`.
+- Energy is awarded for clean scored tricks/combos and clean landings; failed or saved landings do not add it.
+- A full reserve is spent at push start. It increases the existing muscle actuator force ceiling by 20% only during the push, then turns off.
+- Full test suite: **249 passed, 0 failed**. Desktop smoke solver worst step: **1.17 ms** in the actual-project verification run.
+- Godot shutdown resource warnings remain. Graphical and device validation remain blocked/unavailable.
