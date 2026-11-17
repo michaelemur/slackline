@@ -1,0 +1,24 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/slackline/slackline.gd" id="2_line"]
+[ext_resource type="Resource" path="res://resources/presets/trickline.tres" id="3_trick"]
+[ext_resource type="Script" path="res://scripts/athlete/athlete.gd" id="4_ath"]
+[ext_resource type="Script" path="res://scripts/camera/camera_rig.gd" id="5_cam"]
+[ext_resource type="Script" path="res://scripts/ui/lab_panel.gd" id="6_lab"]
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_main")
+
+[node name="Slackline" type="Node3D" parent="."]
+script = ExtResource("2_line")
+params = ExtResource("3_trick")
+
+[node name="Athlete" type="RigidBody3D" parent="."]
+script = ExtResource("4_ath")
+
+[node name="CameraRig" type="Node3D" parent="."]
+script = ExtResource("5_cam")
+
+[node name="LabPanel" type="CanvasLayer" parent="."]
+script = ExtResource("6_lab")
