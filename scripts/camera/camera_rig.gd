@@ -102,6 +102,10 @@ func _place() -> void:
 		yaw += 35.0 * sh["close"]
 		d *= 1.0 - 0.12 * sh["combo"]         # combo: subtle zoom
 		lh -= 0.2 * sh["close"]
+		d += 3.0 * sh["hero"]
+		h = lerpf(h, -1.2, sh["hero"])
+		lh = lerpf(lh, 1.0, sh["hero"])
+		yaw += 165.0 * sh["hero"]
 	var altitude := _target_altitude()
 	d = maxf(d, altitude_framing_distance(distance, altitude))
 	h += maxf(0.0, altitude - 1.6) * 0.08

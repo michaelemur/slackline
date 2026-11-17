@@ -32,6 +32,7 @@ var shot := {
 	"super": 0.0,      # super rebound: big reveal of the height
 	"close": 0.0,      # super rebound trick: closer cinematic angle
 	"combo": 0.0,      # big combo: subtle zoom
+	"hero": 0.0,       # hard trick: low-angle opposite-side shot
 	"trauma": 0.0,     # shake amount (squared when applied)
 }
 
@@ -43,6 +44,8 @@ var time_scale: float = 1.0
 
 # slow-motion envelope (real time)
 var _slow_t: float = -1.0
+var _forced_out_t: float = -1.0
+var _forced_out_start: float = 1.0
 var _slow_hold: float = 0.0
 var _cooldown: float = 0.0
 var _manual_override: bool = false
@@ -51,8 +54,9 @@ var _airborne: bool = false
 var _apex_slow_done: bool = false
 var _last_vy: float = 0.0
 var _hard_done: bool = false
-var _targets := {"pull": 0.0, "trick": 0.0, "super": 0.0, "close": 0.0, "combo": 0.0}
+var _targets := {"pull": 0.0, "trick": 0.0, "super": 0.0, "close": 0.0, "combo": 0.0, "hero": 0.0}
 var _combo_timer: float = 0.0
+var _hero_timer: float = 0.0
 
 
 func _ready() -> void:
@@ -111,6 +115,7 @@ func on_air(airborne: bool, vy: float, h: float, rotating: bool) -> void:
 		_targets["trick"] = 0.0
 		_targets["super"] = 0.0
 		_targets["close"] = 0.0
+		_targets["hero"] = 0.0
 		return
 	# high jumps pull the camera back (0 at 0.4 m, full at 1.6 m above line)
 	_targets["pull"] = clampf((h - 0.4) / 1.2, 0.0, 1.0)
@@ -118,21 +123,33 @@ func on_air(airborne: bool, vy: float, h: float, rotating: bool) -> void:
 	_targets["super"] = 1.0 if is_super else 0.0
 	# super rebound: reveal on the way up, move in close for the trick
 	_targets["close"] = 1.0 if is_super and rotating and vy < 1.5 else 0.0
+	var ttc := (vy + sqrt(vy * vy + 2.0 * 9.81 * maxf(h, 0.0))) / 9.81
 	if is_super and not _apex_slow_done and vy < 1.2:
 		_apex_slow_done = true
-		request_slowmo("super rebound", 1.1)
+		var hold := ttc - slowmo_ease_in - slowmo_ease_out
+		if hold >= 0.1:
+			request_slowmo("super rebound", minf(1.1, hold))
+	# End the slow-motion ramp early enough that the last part of the descent
+	# and physical contact are close to normal speed.
+	if vy < 0.0 and h > 0.0 and _slow_t >= 0.0:
+		if ttc <= slowmo_ease_out * 1.2:
+			_force_slowmo_out()
 
 
 func on_hard_trick(name: String) -> void:
 	if _hard_done:
 		return
 	_hard_done = true
+	_hero_timer = 1.4
+	_targets["hero"] = 1.0
 	request_slowmo("hard trick: " + name, 0.8)
 
 
 func on_land(impact_speed: float, n_tricks: int) -> void:
 	_airborne = false
 	is_super = false
+	_hero_timer = 0.0
+	_targets["hero"] = 0.0
 	if impact_speed >= heavy_landing_speed:
 		add_trauma(clampf((impact_speed - heavy_landing_speed) / 3.0, 0.15, 0.45))
 	if n_tricks >= 2:
@@ -149,24 +166,44 @@ func add_trauma(a: float) -> void:
 ## Slow motion: ease into slowmo_scale, hold, ease back out. Ignored while on
 ## cooldown or while the player's manual slow-mo (M) is on.
 func request_slowmo(reason: String, hold: float) -> bool:
-	if not slowmo_enabled or _cooldown > 0.0 or _slow_t >= 0.0:
+	if not slowmo_enabled or _cooldown > 0.0 or _slow_t >= 0.0 or _forced_out_t >= 0.0:
 		return false
 	if Engine.time_scale < 0.9 and _slow_t < 0.0:
 		return false   # manual slow-mo in charge
 	_slow_t = 0.0
+	_forced_out_t = -1.0
 	_slow_hold = hold
 	slowmo_started.emit(reason)
 	return true
 
 
 func is_slowmo() -> bool:
-	return _slow_t >= 0.0
+	return _slow_t >= 0.0 or _forced_out_t >= 0.0
+
+
+func _force_slowmo_out() -> void:
+	if _slow_t < 0.0 or _forced_out_t >= 0.0:
+		return
+	_forced_out_t = 0.0
+	_forced_out_start = time_scale
+	_slow_t = -1.0
 
 
 ## Advance by REAL time (so ramps and camera stay smooth in slow motion).
 func update(real_dt: float) -> void:
 	# slow-motion envelope
-	if _slow_t >= 0.0:
+	if _forced_out_t >= 0.0:
+		_forced_out_t += real_dt
+		var k_out := 1.0 - smoothstep(0.0, maxf(slowmo_ease_out, 0.01), _forced_out_t)
+		time_scale = lerpf(1.0, _forced_out_start, k_out)
+		if _forced_out_t >= slowmo_ease_out:
+			_forced_out_t = -1.0
+			time_scale = 1.0
+			_cooldown = slowmo_cooldown
+			slowmo_ended.emit()
+		if slowmo_enabled:
+			Engine.time_scale = time_scale
+	elif _slow_t >= 0.0:
 		_slow_t += real_dt
 		var total := slowmo_ease_in + _slow_hold + slowmo_ease_out
 		var k: float
@@ -188,9 +225,12 @@ func update(real_dt: float) -> void:
 		_cooldown = maxf(0.0, _cooldown - real_dt)
 	# combo zoom
 	_combo_timer = maxf(0.0, _combo_timer - real_dt)
+	_hero_timer = maxf(0.0, _hero_timer - real_dt)
+	if _hero_timer <= 0.0:
+		_targets["hero"] = 0.0
 	_targets["combo"] = 1.0 if _combo_timer > 0.0 else 0.0
 	# smooth every shot weight (no sudden moves)
-	var rates := {"pull": 2.2, "trick": 2.0, "super": 1.6, "close": 2.4, "combo": 3.0}
+	var rates := {"pull": 2.2, "trick": 2.0, "super": 1.6, "close": 2.4, "combo": 3.0, "hero": 1.8}
 	for k2 in rates:
 		shot[k2] = lerpf(shot[k2], _targets[k2], 1.0 - exp(-rates[k2] * real_dt))
 	shot["trauma"] = maxf(0.0, shot["trauma"] - 1.4 * real_dt)

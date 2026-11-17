@@ -55,7 +55,7 @@ func test_high_jump_pulls_back_smoothly() -> void:
 	var b := _fly(d, 4.0, false)
 	check(b["pull"] > 0.4, "high jump pulls the camera back (pull %.2f)" % b["pull"])
 	check(b["ts"] == 1.0, "an ordinary high jump has no slow motion")
-	_run(d, 2.0, false, 0.0, 0.0, false)
+	_run(d, 3.0, false, 0.0, 0.0, false)
 	check(d.shot["pull"] < 0.05, "camera returns after landing (%.2f)" % d.shot["pull"])
 
 
@@ -74,11 +74,34 @@ func test_trick_moves_camera_slightly() -> void:
 	check(b["trick"] > 0.5 and b["close"] == 0.0, "trick: slight orbit, no close-up without a super rebound")
 
 
+func test_hard_trick_triggers_hero_shot_and_returns_to_gameplay() -> void:
+	var d := _dir()
+	d.on_hard_trick("Double Backflip")
+	check(d._targets["hero"] == 1.0, "hard tricks request a short Hero Sky Shot")
+	_run(d, 0.5, true, 1.0, 5.0, true)
+	check(d.shot["hero"] > 0.3, "hero shot blends in instead of snapping")
+	_run(d, 2.0, false, 0.0, 0.0, false)
+	check(d.shot["hero"] < 0.1, "hero shot returns to normal camera framing")
+
+
+func test_slow_motion_exits_before_a_near_landing() -> void:
+	var d := _dir()
+	check(d.request_slowmo("test", 2.0), "slow motion starts")
+	for i in 20:
+		d.update(DT)
+	var before := d.time_scale
+	d.on_air(true, -5.0, 0.6, false)
+	check(d._forced_out_t >= 0.0, "near-landing descent starts the smooth exit")
+	_run(d, 0.6, false, 0.0, 0.0, false)
+	check(d.time_scale == 1.0 and not d.is_slowmo(), "slow motion reaches normal speed before contact")
+	Engine.time_scale = 1.0
+
+
 func test_super_rebound_reveal_then_close_and_slowmo() -> void:
 	var d := _dir()
 	var got := []
 	d.super_rebound.connect(func(v): got.append(v))
-	var b := _fly(d, 4.5, true)
+	var b := _fly(d, 8.0, true)
 	check(got.size() == 1, "super rebound detected on a big launch")
 	check(b["super"] > 0.5, "camera pulls back to reveal the height (%.2f)" % b["super"])
 	check(b["close"] > 0.3, "moves to a close cinematic angle during the trick (%.2f)" % b["close"])

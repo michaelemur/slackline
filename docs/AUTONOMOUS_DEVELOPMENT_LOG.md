@@ -22,8 +22,9 @@ Baseline commit: `ba0cf9e` (pre-roadmap changes)
 | 5 — Body shape, grabs, biomechanics | Complete | Tuck changes inertia independently of rotation; left/right grabs are independent; tuck no longer automatically poses hands onto shins. |
 | 6 — Natural jump height and line/camera behavior | Complete | Removed the six-second airborne cutoff; valid flight is limited by physical contact and numeric-state recovery. Camera framing distance scales continuously with altitude. No vertical launch clamp or injected jump impulse was found. |
 | 7 — Combos, scoring and Super Rebound | In progress | Existing trick scoring and camera Super Rebound detection exist; an earned energy meter and physical rebound enhancement remain to be audited/implemented. |
-| 8 — Camera and slow motion | In progress | Existing follow/framing, slow motion, and Super Rebound camera detection are present; cinematic shot staging and broader test coverage are next. |
-| 9–14 | Not started | Line lengths/clearance, character/environment/UI/audio, mobile optimization, integration/release. |
+| 8 — Camera and slow motion | Complete | Hard tricks blend to an opposite-side, low-angle hero shot; camera eases out before landing; short flights skip slow motion if there is not enough airtime for a safe envelope. |
+| 9 — Line lengths and clearance | In progress | Existing parameter slider/presets and beach layout need audit for 15/30/40m choices and safe scenery clearance. |
+| 10–14 | Not started | Character/environment/UI/audio, mobile optimization, integration/release. |
 
 ## Stage 6 details
 
@@ -47,3 +48,11 @@ Baseline commit: `ba0cf9e` (pre-roadmap changes)
 - A full reserve is spent at push start. It increases the existing muscle actuator force ceiling by 20% only during the push, then turns off.
 - Full test suite: **249 passed, 0 failed**. Desktop smoke solver worst step: **1.17 ms** in the actual-project verification run.
 - Godot shutdown resource warnings remain. Graphical and device validation remain blocked/unavailable.
+
+## Stage 8 details
+
+- Files changed: `scripts/camera/cinematic_director.gd`, `scripts/camera/camera_rig.gd`, and `tests/test_cinematic.gd`.
+- Hard tricks activate a smoothed 1.4-second low-angle opposite-side shot, then return to normal framing.
+- Super Rebound slow motion now calculates available airtime and smoothly exits on descent; short flights skip slow motion when the full envelope cannot fit before landing.
+- Full test suite: **255 passed, 0 failed**. Desktop smoke solver worst step: **1.40 ms** in this run.
+- Graphical validation remains unavailable because the bundled Godot application fails to launch.
