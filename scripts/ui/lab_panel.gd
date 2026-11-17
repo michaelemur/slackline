@@ -7,7 +7,9 @@ signal preset_requested(path: String)
 signal reset_requested
 
 const PRESETS := {
-	"Trickline": "res://resources/presets/trickline.tres",
+	"Trickline 15m": "res://resources/presets/trickline.tres",
+	"Trickline 30m": "res://resources/presets/trickline_30m.tres",
+	"Trickline 40m": "res://resources/presets/trickline_40m.tres",
 	"Standard": "res://resources/presets/standard.tres",
 }
 
@@ -23,6 +25,7 @@ var _balance_bar: ProgressBar
 var _energy_bar: ProgressBar
 var _panel: PanelContainer
 var _sliders: VBoxContainer
+var _line_length_options: OptionButton
 var _rebuild_pending: bool = false
 
 
@@ -36,6 +39,12 @@ func _ready() -> void:
 func bind(l: Slackline, a: Athlete) -> void:
 	line = l
 	athlete = a
+	if _line_length_options != null:
+		var preset_lengths := [15.0, 30.0, 40.0]
+		for i in preset_lengths.size():
+			if is_equal_approx(line.params.length, preset_lengths[i]):
+				_line_length_options.select(i)
+				break
 	_populate_sliders()
 
 
@@ -56,7 +65,7 @@ func _process(_delta: float) -> void:
 		+ "Air: flip %+.0f deg  spin %+.1f rad/s  tuck %d%%  grab %s | velocity %.1f m/s\n" % [rad_to_deg(athlete.tricks.pitch), athlete.tricks.omega_pitch, int(athlete.tricks.tuck * 100.0), athlete.tricks.grab if athlete.tricks.grab != "" else "-", athlete.linear_velocity.length() if athlete.state == 1 else athlete.foot_velocity.length()]
 		+ "Solver: %.2f ms   FPS: %d\n" % [line.last_step_ms, Engine.get_frames_per_second()]
 		+ "SCORE: %d   Tricks landed: %d   Best combo: %d%s\n" % [athlete.tricks.score, athlete.tricks.tricks_landed, athlete.tricks.best_combo, (("   [DEMO: %s]" % (demo_mode_fn.call() if demo_mode_fn.is_valid() else "")) if demo_enabled_fn.is_valid() and demo_enabled_fn.call() else "")]
-		+ "W/S walk  A/D hips  Q/E left/right arm  SHIFT bend knees  SPACE pump/jump  R reset  1/2 presets  [ ] camera  G COM  V body  F1 lab  F one leg\n"
+		+ "W/S walk  A/D hips  Q/E left/right arm  SHIFT bend knees  SPACE pump/jump  R reset  1/2/3/4 line presets  [ ] camera  G COM  V body  F1 lab  F one leg\n"
 		+ "SET on the line: J back K front L 360 H 180 U back360 I front360 Y back180 | AIR: SPACE tuck, W lean fwd, grabs B knees N knee O leg P cross F tuck   LINE: Z butt  X chest  C back bounce   T demo  M slow-mo  F3 REBOUND LAB  F4 MOCAP%s" % ("  [SLOW-MO]" if Engine.time_scale < 0.9 else ""))
 	var tr := athlete.tricks
 	if tr.message_time > 0.0:
@@ -163,15 +172,22 @@ func _build_panel() -> void:
 	root.add_child(title)
 	var row := HBoxContainer.new()
 	root.add_child(row)
-	for preset_name in PRESETS:
-		var b := Button.new()
-		b.text = preset_name
-		b.pressed.connect(func(): preset_requested.emit(PRESETS[preset_name]))
-		row.add_child(b)
+	_line_length_options = OptionButton.new()
+	_line_length_options.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for preset_name in ["Trickline 15m", "Trickline 30m", "Trickline 40m"]:
+		_line_length_options.add_item(preset_name)
+		_line_length_options.set_item_metadata(_line_length_options.item_count - 1, PRESETS[preset_name])
+	_line_length_options.item_selected.connect(func(index: int):
+		preset_requested.emit(str(_line_length_options.get_item_metadata(index))))
+	row.add_child(_line_length_options)
+	var standard_button := Button.new()
+	standard_button.text = "Standard 18m"
+	standard_button.pressed.connect(func(): preset_requested.emit(PRESETS["Standard"]))
+	row.add_child(standard_button)
 	var rb := Button.new()
 	rb.text = "Reset athlete"
 	rb.pressed.connect(func(): reset_requested.emit())
-	row.add_child(rb)
+	root.add_child(rb)
 	_sliders = VBoxContainer.new()
 	root.add_child(_sliders)
 

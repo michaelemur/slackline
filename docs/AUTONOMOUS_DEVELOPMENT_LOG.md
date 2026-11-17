@@ -21,10 +21,11 @@ Baseline commit: `ba0cf9e` (pre-roadmap changes)
 | 4 — Free aerial controls | Complete | Held flip/twist torque controls, direction reversal, multi-rotation recognition and gamepad/keyboard/touch input mapping. |
 | 5 — Body shape, grabs, biomechanics | Complete | Tuck changes inertia independently of rotation; left/right grabs are independent; tuck no longer automatically poses hands onto shins. |
 | 6 — Natural jump height and line/camera behavior | Complete | Removed the six-second airborne cutoff; valid flight is limited by physical contact and numeric-state recovery. Camera framing distance scales continuously with altitude. No vertical launch clamp or injected jump impulse was found. |
-| 7 — Combos, scoring and Super Rebound | In progress | Existing trick scoring and camera Super Rebound detection exist; an earned energy meter and physical rebound enhancement remain to be audited/implemented. |
+| 7 — Combos, scoring and Super Rebound | Complete | Earned energy meter feeds a temporary physical actuator increase on the next push. |
 | 8 — Camera and slow motion | Complete | Hard tricks blend to an opposite-side, low-angle hero shot; camera eases out before landing; short flights skip slow motion if there is not enough airtime for a safe envelope. |
-| 9 — Line lengths and clearance | In progress | Existing parameter slider/presets and beach layout need audit for 15/30/40m choices and safe scenery clearance. |
-| 10–14 | Not started | Character/environment/UI/audio, mobile optimization, integration/release. |
+| 9 — Line lengths and clearance | Complete | Added 15/30/40m Trickline presets, live environment rebuilds and a tested 10m ground vegetation clearance band. |
+| 10 — Character presentation and visual polish | In progress | Audit current character presentation and identify focused improvements that preserve the procedural rig and physics. |
+| 11–14 | Not started | Beach polish, UI/game flow/audio, mobile optimization, integration/release. |
 
 ## Stage 6 details
 
@@ -56,3 +57,12 @@ Baseline commit: `ba0cf9e` (pre-roadmap changes)
 - Super Rebound slow motion now calculates available airtime and smoothly exits on descent; short flights skip slow motion when the full envelope cannot fit before landing.
 - Full test suite: **255 passed, 0 failed**. Desktop smoke solver worst step: **1.40 ms** in this run.
 - Graphical validation remains unavailable because the bundled Godot application fails to launch.
+
+## Stage 9 details
+
+- Added dedicated Trickline presets for 15m, 30m and 40m. The longer spans use 72 and 96 solver segments respectively, keeping each segment at or below 0.5m.
+- Added a compact Physics Lab span selector and keyboard shortcuts (1/3/4 for the three Trickline spans; 2 remains Standard).
+- Line rebuild signals now recenter/rebuild the beach layout, shoreline, vegetation and camera axis. The Physics Lab's custom-length slider follows the same path.
+- Palms, bushes and procedural grass are positioned using planar distance from the finite line segment, with a ten-metre band plus conservative footprint radii.
+- Full suite on the existing project: **1114 passed, 0 failed**. Smoke test switched the live scene through 30m, 40m and back to 15m. Highest observed desktop solver step in that run was **0.90 ms**; this is not a whole-frame or mobile benchmark.
+- The clearance test covers authored and procedural ground vegetation. Trajectory/camera obstruction still needs graphical review once the Godot GUI can launch.

@@ -20,6 +20,8 @@ const BINDINGS := {
 	"toggle_lab": [KEY_F1, KEY_TAB],
 	"preset_trickline": [KEY_1],
 	"preset_standard": [KEY_2],
+	"preset_trickline_30m": [KEY_3],
+	"preset_trickline_40m": [KEY_4],
 	"cam_orbit_left": [KEY_BRACKETLEFT, KEY_9],
 	"cam_orbit_right": [KEY_BRACKETRIGHT, KEY_0],
 	"arm_left": [KEY_Q],

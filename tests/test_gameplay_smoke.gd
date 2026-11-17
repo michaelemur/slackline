@@ -259,7 +259,22 @@ func _physics_process(delta: float) -> void:
 		_check(athlete.state != Athlete.State.FALLEN,
 			"failed chest push recovers to a supported state")
 		athlete.pose_push_reach = 0.35
-	if _at(77.0, "end"):
+	if _at(77.0, "line_30m"):
+		main.load_preset("res://resources/presets/trickline_30m.tres")
+		var beach := main.get_node("Beach")
+		_check(absf(line.chord_length() - 30.0) < 0.01 and absf(beach.line_length - 30.0) < 0.01,
+			"selecting 30 m rebuilds both the physical span and beach layout")
+	if _at(77.2, "line_40m"):
+		main.load_preset("res://resources/presets/trickline_40m.tres")
+		var beach := main.get_node("Beach")
+		_check(absf(line.chord_length() - 40.0) < 0.01 and absf(beach.line_length - 40.0) < 0.01,
+			"selecting 40 m rebuilds both the physical span and beach layout")
+	if _at(77.4, "line_15m"):
+		main.load_preset("res://resources/presets/trickline.tres")
+		var beach := main.get_node("Beach")
+		_check(absf(line.chord_length() - 15.0) < 0.01 and absf(beach.line_length - 15.0) < 0.01,
+			"returning to 15 m restores the matching beach layout")
+	if _at(77.6, "end"):
 		_check(line.solver.is_finite_state(), "solver state finite")
 		# 99th percentile: single spikes on a shared/loaded machine are not the solver
 		_steps_ms.sort()

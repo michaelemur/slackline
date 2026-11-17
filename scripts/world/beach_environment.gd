@@ -10,11 +10,17 @@ extends Node3D
 ## toward +Z, so the ocean is placed at +Z behind the line.
 
 @export var line_length: float = 15.0
-@export var shore_z: float = 16.0          # where sand meets water
+@export var shore_z: float = 24.0          # where sand meets water
 @export var seed_value: int = 7
 
 var _clouds: Array[Node3D] = []
 var _rng := RandomNumberGenerator.new()
+var _layout_built: bool = false
+
+const MIN_LINE_CLEARANCE := 10.0
+const PALM_FOOTPRINT_RADIUS := 5.5
+const BUSH_FOOTPRINT_RADIUS := 2.5
+const GRASS_FOOTPRINT_RADIUS := 0.5
 
 const OCEAN_SHADER := """
 shader_type spatial;
@@ -82,6 +88,23 @@ void fragment() {
 
 
 func _ready() -> void:
+	_rebuild_layout()
+
+
+func configure_for_line_length(length: float) -> void:
+	var next_length := maxf(length, 4.0)
+	var changed := not is_equal_approx(line_length, next_length)
+	line_length = next_length
+	shore_z = shore_for_line_length(next_length)
+	if _layout_built and changed:
+		_rebuild_layout()
+
+
+func _rebuild_layout() -> void:
+	for child in get_children():
+		remove_child(child)
+		child.queue_free()
+	_clouds.clear()
 	_rng.seed = seed_value
 	_build_sky()
 	_build_sand()
@@ -90,12 +113,67 @@ func _ready() -> void:
 	_build_palms()
 	_build_plants()
 	_build_clouds()
+	_layout_built = true
+
+
+static func shore_for_line_length(length: float) -> float:
+	# Keep the beach comfortably behind the clearance band. It grows slightly
+	# with the selected span so the background remains visually spacious.
+	return 24.0 + maxf(0.0, length - 15.0) * 0.05
+
+
+static func clearance_to_line(point: Vector3, length: float) -> float:
+	var closest_x := clampf(point.x, 0.0, maxf(length, 0.0))
+	return Vector2(point.x - closest_x, point.z).length()
+
+
+static func is_clear_of_line(point: Vector3, length: float, obstacle_radius: float = 0.0) -> bool:
+	return clearance_to_line(point, length) >= MIN_LINE_CLEARANCE + maxf(obstacle_radius, 0.0)
+
+
+static func palm_spots_for_length(length: float, seed: int = 7) -> Array[Vector3]:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed
+	var spots: Array[Vector3] = []
+	for i in range(7):
+		var x := lerpf(0.0, length, float(i) / 6.0) + rng.randf_range(-1.2, 1.2)
+		spots.append(Vector3(x, 0.0, rng.randf_range(16.0, 21.0)))
+	spots.append(Vector3(-16.0, 0.0, 0.0))
+	spots.append(Vector3(length + 16.0, 0.0, 0.0))
+	spots.append(Vector3(-16.0, 0.0, -16.0))
+	spots.append(Vector3(length + 16.0, 0.0, -16.0))
+	return spots
+
+
+static func plant_spots_for_length(length: float) -> Array[Vector3]:
+	return [
+		Vector3(-14.0, 0.0, -14.0), Vector3(-13.0, 0.0, 14.0),
+		Vector3(length + 14.0, 0.0, -14.0), Vector3(length + 13.0, 0.0, 14.0),
+		Vector3(length * 0.25, 0.0, -14.0), Vector3(length * 0.5, 0.0, 14.0),
+		Vector3(length * 0.75, 0.0, -14.0), Vector3(length * 0.9, 0.0, 14.0),
+	]
+
+
+static func grass_spots_for_length(length: float, seed: int = 7, count: int = 260) -> Array[Vector3]:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed
+	var spots: Array[Vector3] = []
+	for i in range(maxi(count, 0)):
+		var p := Vector3.ZERO
+		for attempt in range(16):
+			p = Vector3(rng.randf_range(-25.0, length + 25.0), 0.0, rng.randf_range(-22.0, 9.0))
+			if is_clear_of_line(p, length, GRASS_FOOTPRINT_RADIUS):
+				break
+		if not is_clear_of_line(p, length, GRASS_FOOTPRINT_RADIUS):
+			p.z = 10.75 if rng.randf() < 0.5 else -10.75
+		spots.append(p)
+	return spots
 
 
 func _process(delta: float) -> void:
 	for c in _clouds:
 		c.position.x += delta * c.get_meta("speed")
-		if c.position.x > 180.0:
+		if c.position.x > line_length + 140.0:
 			c.position.x = -160.0
 
 
@@ -226,14 +304,9 @@ func _build_palms() -> void:
 	nut_mat.albedo_color = Color(0.30, 0.22, 0.10)
 	# Where: behind the line (middle ground), at both ends, and a few in the
 	# foreground off to the sides so they never cover the athlete.
-	var spots: Array[Vector3] = []
-	for i in range(7):
-		spots.append(Vector3(-6.0 + i * 4.6 + _rng.randf_range(-1.2, 1.2), 0, _rng.randf_range(5.0, 11.0)))
-	spots.append(Vector3(-4.0, 0, -1.5))
-	spots.append(Vector3(line_length + 4.0, 0, 1.0))
-	spots.append(Vector3(-14.0, 0, -9.0))
-	spots.append(Vector3(line_length + 13.0, 0, -8.0))
-	for p in spots:
+	for p in palm_spots_for_length(line_length, seed_value):
+		if not is_clear_of_line(p, line_length, PALM_FOOTPRINT_RADIUS):
+			continue
 		_palm(p, _rng.randf_range(5.5, 8.5), trunk_mat, leaf_mat, frond, nut_mat)
 
 
@@ -331,10 +404,9 @@ func _build_plants() -> void:
 	bush.height = 2.0
 	bush.radial_segments = 10
 	bush.rings = 5
-	var spots := [Vector3(-8, 0, -4), Vector3(-10, 0, 3), Vector3(line_length + 7, 0, -3),
-		Vector3(line_length + 9, 0, 4), Vector3(3, 0, 9), Vector3(11, 0, 8),
-		Vector3(-16, 0, -6), Vector3(line_length + 16, 0, -5)]
-	for p in spots:
+	for p in plant_spots_for_length(line_length):
+		if not is_clear_of_line(p, line_length, BUSH_FOOTPRINT_RADIUS):
+			continue
 		for k in range(3):
 			var b := MeshInstance3D.new()
 			b.mesh = bush
@@ -352,12 +424,10 @@ func _build_plants() -> void:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = _tuft_mesh()
-	mm.instance_count = 260
+	var grass_spots := grass_spots_for_length(line_length, seed_value, 260)
+	mm.instance_count = grass_spots.size()
 	for i in range(mm.instance_count):
-		var p := Vector3(_rng.randf_range(-25, line_length + 25), 0, _rng.randf_range(-22, 9))
-		# keep the strip under the line and the camera's view of it clear
-		if p.z > -3.5 and p.z < 3.5 and p.x > -2.0 and p.x < line_length + 2.0:
-			p.z += 7.0 * signf(p.z + 0.01)
+		var p: Vector3 = grass_spots[i]
 		var b := Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3.ONE * _rng.randf_range(0.6, 1.3))
 		mm.set_instance_transform(i, Transform3D(b, p))
 	var mmi := MultiMeshInstance3D.new()
@@ -394,7 +464,7 @@ func _build_clouds() -> void:
 	sp.rings = 5
 	for i in range(7):
 		var c := Node3D.new()
-		c.position = Vector3(_rng.randf_range(-150, 170), _rng.randf_range(45, 70), _rng.randf_range(160, 260))
+		c.position = Vector3(_rng.randf_range(-150, line_length + 130.0), _rng.randf_range(45, 70), _rng.randf_range(160, 260))
 		c.set_meta("speed", _rng.randf_range(0.6, 1.4))
 		for k in range(4):
 			var puff := MeshInstance3D.new()

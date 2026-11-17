@@ -30,6 +30,7 @@ func _ready() -> void:
 	camera_rig.snap()
 	lab.bind(line, athlete)
 	_add_touch_controls()
+	line.rebuilt.connect(_on_line_rebuilt)
 	demo.name = "DemoPilot"
 	demo.athlete = athlete
 	add_child(demo)
@@ -80,7 +81,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("toggle_lab"):
 		lab.toggle()
 	elif event.is_action_pressed("preset_trickline"):
-		load_preset(LabPanel.PRESETS["Trickline"])
+		load_preset(LabPanel.PRESETS["Trickline 15m"])
+	elif event.is_action_pressed("preset_trickline_30m"):
+		load_preset(LabPanel.PRESETS["Trickline 30m"])
+	elif event.is_action_pressed("preset_trickline_40m"):
+		load_preset(LabPanel.PRESETS["Trickline 40m"])
 	elif event.is_action_pressed("preset_standard"):
 		load_preset(LabPanel.PRESETS["Standard"])
 
@@ -88,9 +93,15 @@ func _unhandled_input(event: InputEvent) -> void:
 func load_preset(path: String) -> void:
 	line.apply_preset(load(path) as SlacklineParams)
 	athlete.reset_to_line(line.chord_length() * 0.5)
-	camera_rig.set_forward(line.axis())
 	camera_rig.snap()
 	lab.bind(line, athlete)
+
+
+func _on_line_rebuilt() -> void:
+	if beach != null:
+		beach.call("configure_for_line_length", line.chord_length())
+	if camera_rig != null:
+		camera_rig.set_forward(line.axis())
 
 
 # preloaded (not class_name) so a freshly copied project runs before the
@@ -107,7 +118,7 @@ var studio: Node3D = null
 func _build_environment() -> void:
 	beach = BeachScript.new()
 	beach.name = "Beach"
-	beach.set("line_length", line.chord_length())
+	beach.call("configure_for_line_length", line.chord_length())
 	studio = _build_studio()
 	add_child(beach)
 	# Floor collider for falls (shared by both looks). No mattress.

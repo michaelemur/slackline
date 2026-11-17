@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="SlacklineParams" format=3]
+
+[ext_resource type="Script" path="res://scripts/slackline/slackline_params.gd" id="1_params"]
+
+[resource]
+script = ExtResource("1_params")
+preset_name = "Trickline 30m"
+length = 30.0
+anchor_height = 2.2
+segments = 72
+pretension = 3600.0
+stiffness_ea = 75000.0
+mass_per_meter = 0.09
+width = 0.05
+damping_mass = 0.12
+damping_stiffness = 0.017
+substeps = 4
+color = Color(0.95, 0.32, 0.08, 1)
