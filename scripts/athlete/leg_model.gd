@@ -48,6 +48,18 @@ var target: float = 0.96            # commanded leg length (m)
 var active_target: float = 0.96     # after activation dynamics
 var min_len: float = 0.55           # active bottom-out length (l_pose in tricks)
 
+## --- Sticky bounce grip (hands closed around the line) -----------------
+## While gripping, the coupling is two-way: the arms can PULL the body toward
+## the line (negative force) up to the grip strength, the body cannot leave
+## the line (no takeoff) and the hands stay at the contact point. Beyond full
+## arm reach the straight arms act as a stiff stop. Energy still only enters
+## through actuator work F * dl/dt.
+var grip: bool = false
+var grip_reach: float = 0.42        # m, COM above the line with straight arms (sitting)
+var grip_pull_max: float = 1500.0   # N, two-hand grip + arm pull (~2 BW, assumption)
+var k_grip_stop: float = 40000.0    # N/m, straight arms
+var c_grip_stop: float = 1500.0
+
 # --- state ---
 var s: float = 0.0                  # contact position along the chord
 var y_c: float = 0.0                # COM height (world)
@@ -61,6 +73,11 @@ var work: float = 0.0               # actuator work this contact (J)
 
 func com_mass() -> float:
 	return body_mass - foot_mass
+
+
+## Pulling uses the arms: a share of the push strength.
+func strength_pull() -> float:
+	return 1.0
 
 
 ## Starts a contact phase with the COM at `leg_length` above the line.
@@ -97,16 +114,26 @@ func pre_substep(solver: SlacklineSolver, dt: float) -> void:
 	var cap := fm * eccentric_ratio
 	if ldot > 0.0:
 		cap = fm * maxf(0.0, 1.0 - ldot / v_max)
-	f = clampf(f, 0.0, cap)
+	if grip:
+		# arms pull toward the line as hard as the grip allows
+		f = clampf(f, -grip_pull_max * strength_pull(), cap)
+	else:
+		f = clampf(f, 0.0, cap)
 	# Arm swing: accelerating the arms upward pushes the body (and so the
 	# feet) down harder - the reaction m_arms * a_arms adds to the push.
 	if assist_force != 0.0 and l < contact_max:
 		f = maxf(0.0, f + assist_force)
 	# Lockout: a straight leg (or straight arms) cannot push further.
-	f *= clampf((contact_max - l) / lockout_band, 0.0, 1.0)
+	if not grip or f > 0.0:
+		f *= clampf((contact_max - l) / lockout_band, 0.0, 1.0)
 	if l < min_len:
 		f += k_stop * (min_len - l) + c_stop * maxf(0.0, -ldot)
-	if l > contact_max + 1e-3:
+	if grip:
+		var reach := l_pose + grip_reach
+		if l > reach:
+			f -= k_grip_stop * (l - reach) + c_grip_stop * maxf(0.0, ldot)
+		f = maxf(f, -grip_pull_max)
+	elif l > contact_max + 1e-3:
 		f = 0.0
 	force = f
 	peak_force = maxf(peak_force, f)
@@ -122,7 +149,7 @@ func post_substep(solver: SlacklineSolver, dt: float) -> void:
 	var l := leg_length(solver)
 	# Takeoff: out of reach of the line and still moving away from it.
 	# (Falling INTO a lower contact, e.g. dropping to a butt bounce, is not a takeoff.)
-	if l > contact_max + 0.005 and leg_speed(solver) > 0.05:
+	if l > contact_max + 0.005 and leg_speed(solver) > 0.05 and not grip:
 		takeoff = true
 
 

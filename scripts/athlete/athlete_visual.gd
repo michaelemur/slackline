@@ -471,6 +471,10 @@ func apply_body(ctx: Dictionary, dt: float) -> void:
 				var hg := _grab_hand(grab, side)
 				if not hg.is_empty():
 					character.hand_goal[side] = ["bone", hg, gw]
+		elif ctx.get("sticky", false) and pose == "butt":
+			# sticky bounce: both hands closed on the line in front of the hips
+			character.hand_goal["l"] = ["point", Vector3(-0.03, 0.03, -0.14), 1.0]
+			character.hand_goal["r"] = ["point", Vector3(0.03, 0.03, -0.30), 1.0]
 		elif pose == "chest" and e > 0.3:
 			var lp: Vector3 = ctx.get("line_pt", Vector3.ZERO)
 			character.hand_goal["l"] = ["point", lp, e * 0.9]

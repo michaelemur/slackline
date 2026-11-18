@@ -101,7 +101,10 @@ func _process(_delta: float) -> void:
 		_trick_label.text = "Landing: " + TrickController.LINE_TRICKS[tr.queued_pose]["name"]
 		_trick_label.modulate.a = 0.85
 	elif athlete.pose != "":
-		_trick_label.text = TrickController.LINE_TRICKS[athlete.pose]["name"] + "..."
+		if athlete.sticky:
+			_trick_label.text = "Sticky Bounce  x%d  -  let go of GRAB to fly" % athlete.sticky_cycles
+		else:
+			_trick_label.text = TrickController.LINE_TRICKS[athlete.pose]["name"] + "..."
 		_trick_label.modulate.a = 1.0
 	elif athlete.state == Athlete.State.AIRBORNE and tr.is_rotating():
 		# Live rotation readout: you decide when to open out of the tuck.
@@ -201,7 +204,9 @@ func _build_hud() -> void:
 		+ "   aim the takeoff while loading: UP/J backflip, DOWN/K frontflip,\n"
 		+ "   LEFT/RIGHT (H/L) twist.  F = grab (tucked or straight)\n"
 		+ "LEFT HAND  A/D balance, W/S walk (in the air: small attitude fix)\n"
-		+ "Z/X/C butt / chest / back   1/3/4 line   N music on/off   R reset   ESC pause")
+		+ "Z/X/C butt / chest / back.  STICKY: in a butt bounce hold F to grip,\n"
+		+ "   pump with SPACE (hold as the line drops), let go of F to fly\n"
+		+ "1/3/4 line   N music on/off   R reset   ESC pause")
 	help_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_help_panel.add_child(help_text)
 

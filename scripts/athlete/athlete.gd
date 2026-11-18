@@ -18,6 +18,21 @@ enum State { ON_LINE, AIRBORNE, FALLEN }
 
 const ReboundMeterScript := preload("res://scripts/athlete/rebound_meter.gd")
 
+## --- Sticky bounce (butt bounce with both hands gripping the line) -----
+## Hold GRAB while sitting in a butt bounce: both hands close on the line and
+## the body stays attached (no takeoff). SPACE hold = pull in / compress,
+## release = push away / extend: pumping in time with the line builds its
+## amplitude through actuator work only. Let go of GRAB to release: the line's
+## stored energy throws you up through the normal (unilateral) contact.
+signal sticky_changed(active: bool)
+@export var sticky_stroke: float = 0.30        # m of hip/arm stroke above the sitting height
+@export var sticky_pull_in: float = 0.03       # m below sitting height the arms pull toward
+var sticky: bool = false
+var sticky_time: float = 0.0
+var sticky_cycles: int = 0
+var sticky_work: float = 0.0                   # J of actuator work put into the line while gripping
+var _sticky_prev_vf: float = 0.0
+
 ## --- Takeoff rotation from the body lean (two-zone controls) -----------
 ## The right-hand AIM leans the body fore/aft while loading and pushing. The
 ## line pushes through the feet, the centre of mass is offset by the lean, so
@@ -249,6 +264,7 @@ func pre_line_step(dt: float) -> void:
 			var direct_rotation := absf(input.flip_axis) > 0.01 or absf(input.twist_axis) > 0.01
 			if not direct_rotation:
 				tricks.request(input.trick, state == State.AIRBORNE)
+	_update_sticky(dt)
 	tricks.tick_message(dt)
 	if state == State.ON_LINE:
 		if input.aim.length() > 0.15:
@@ -282,6 +298,9 @@ func _leg_command(dt: float) -> float:
 	var stance := leg.l_max - stance_bend - balance.knee_input * 0.22
 	if input.jump_released:
 		_push_left = push_time
+	if sticky:
+		# hold = pull the body in toward the line, release = push away from it
+		return leg.l_pose - sticky_pull_in if input.pump_held else leg.l_pose + sticky_stroke
 	if pose != "":
 		# Same controls as on the feet: SPACE hold = load low, release = push
 		# off the line with arms and hips.
@@ -414,6 +433,7 @@ func post_line_step(dt: float) -> void:
 		"land_pt": _land_point, "land_w": _land_w,
 		# point on the line under the left shoulder (chest bounce hand)
 		"line_pt": Vector3(-0.01, 0.03, -0.38),
+		"sticky": sticky,
 	}, dt)
 	if state != State.FALLEN:
 		visual.keep_feet_above(line.ground_height)
@@ -711,6 +731,7 @@ func fall(reason: String = "unspecified") -> void:
 
 
 func reset_to_line(at_s: float) -> void:
+	end_sticky("reset")
 	freeze = true
 	lock_rotation = true
 	_pending_velocity = null
@@ -796,7 +817,7 @@ func _update_pose(dt: float, vel: Vector3) -> void:
 		_pose_pushed = false
 	# The bounce ends physically with a takeoff (see _update_on_line). If the
 	# line dies out under you, you climb back to your feet without points.
-	if pose_time > POSE_TIMEOUT:
+	if pose_time > POSE_TIMEOUT and not sticky:
 		_stand_up_from_pose()
 
 
@@ -927,7 +948,54 @@ func _integrate_forces(st: PhysicsDirectBodyState3D) -> void:
 		_pending_angular = null
 
 
+func _update_sticky(dt: float) -> void:
+	var can_grip := state == State.ON_LINE and pose == "butt" and _pose_contacted and _rising_from == ""
+	if sticky:
+		if not can_grip:
+			end_sticky("contact lost")
+			return
+		if not input.grip_held:
+			end_sticky("released")
+			return
+		sticky_time += dt
+		sticky_work += leg.force * leg.leg_speed(line.solver) * dt
+		var vf := line.sample_velocity(s).y
+		if _sticky_prev_vf < 0.0 and vf >= 0.0:
+			sticky_cycles += 1          # line turned at the bottom: one pump cycle
+		_sticky_prev_vf = vf
+		pose_time = 0.0
+		_pose_pushed = true             # no automatic push while holding on
+	elif can_grip and input.grip_held:
+		sticky = true
+		sticky_time = 0.0
+		sticky_cycles = 0
+		sticky_work = 0.0
+		_sticky_prev_vf = line.sample_velocity(s).y
+		leg.grip = true
+		_pose_pushed = true
+		_record_contact_event("sticky grip")
+		tricks.say("STICKY GRIP!")
+		sticky_changed.emit(true)
+
+
+## Hands open. The contact goes back to one-way: if the line is coming up,
+## the body is thrown off it (and the hips/legs drive with it).
+func end_sticky(reason: String) -> void:
+	if not sticky:
+		return
+	sticky = false
+	leg.grip = false
+	_record_contact_event("sticky end: " + reason)
+	sticky_changed.emit(false)
+	if reason == "released" and state == State.ON_LINE and pose == "butt":
+		_pose_pushed = false
+		if line.sample_velocity(s).y > 0.3 and not input.pump_held:
+			_rise_from_pose()
+
+
 func _set_state(new_state: int) -> void:
+	if new_state != State.ON_LINE and sticky:
+		end_sticky("left the line")
 	if state != new_state:
 		var old_state := state_name()
 		state = new_state

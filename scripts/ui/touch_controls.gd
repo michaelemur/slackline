@@ -8,6 +8,8 @@ extends Control
 ##   release = drive (or open/straight). While holding, drag from where the
 ##   finger went down to AIM the takeoff lean: up = backflip, down = frontflip,
 ##   sideways = twist.
+## Sticky bounce: sitting in a butt bounce, keep the LEFT thumb down to grip the
+##   line with both hands, pump with the right, lift the left thumb to fly.
 ## Small buttons (top right): GRAB (hold, works tucked or straight) and the
 ##   line positions BUTT / CHEST / BACK (tap).
 ## Every finger is tracked independently, so both hands work at once.
@@ -141,6 +143,7 @@ func _touch_down(index: int, position: Vector2) -> void:
 		if _stick_pointer < 0:
 			_stick_pointer = index
 			_stick_origin = position
+			athlete_input.touch_left_down = true
 			_set_stick(Vector2.ZERO)
 	elif _hold_pointer < 0:
 		_hold_pointer = index
@@ -171,6 +174,7 @@ func _set_stick(v: Vector2) -> void:
 func _touch_up(index: int) -> void:
 	if index == _stick_pointer:
 		_stick_pointer = -1
+		athlete_input.touch_left_down = false
 		_set_stick(Vector2.ZERO)
 	if index == _hold_pointer:
 		_hold_pointer = -1

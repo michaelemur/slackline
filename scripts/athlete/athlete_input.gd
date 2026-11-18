@@ -31,6 +31,11 @@ var aim: Vector2 = Vector2.ZERO
 ## the arms and hips in the air (no new angular momentum).
 var stick: Vector2 = Vector2.ZERO
 var grab_held: bool = false      # independent of tuck/straight
+## Sticky bounce grip (hands on the line while sitting): F / GRAB button, or on
+## a phone simply keeping the LEFT thumb down (balance is not needed while
+## seated, so the left hand holds on and the right hand pumps).
+var grip_held: bool = false
+var touch_left_down: bool = false
 
 var touch_aim: Vector2 = Vector2.ZERO
 var touch_hold: bool = false
@@ -113,6 +118,7 @@ func poll() -> void:
 		aim = override_aim.limit_length(1.0)
 		stick = Vector2(balance_axis, override_stick_y)
 		grab_held = grab != ""
+		grip_held = grab_held
 	else:
 		# LEFT: balance stick (A/D weight, W/S walk / air attitude; left stick)
 		stick = Vector2(Input.get_axis("balance_left", "balance_right"),
@@ -135,6 +141,7 @@ func poll() -> void:
 		arm_right = 1.0 if Input.is_action_pressed("arm_right") else 0.0
 		leg_lift = 1.0 if Input.is_action_pressed("leg_lift") else 0.0
 		grab_held = Input.is_action_pressed("grab") or touch_grab or touch_grab_left or touch_grab_right
+		grip_held = grab_held or touch_left_down
 		# grabs are independent of the body shape: the same grab button holds
 		# the knees when tucked, the shins/legs when straight
 		grab = ("both_knees" if tuck > 0.5 else "leg") if grab_held else ""

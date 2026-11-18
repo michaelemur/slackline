@@ -99,3 +99,16 @@ func test_buttons_stay_inside_small_and_tall_safe_areas() -> void:
 				"%s inside safe area %s" % [c.ACTION_LABELS[i], rect])
 			check(not c._is_left(center), "%s is on the right-hand side" % c.ACTION_LABELS[i])
 		_free(p)
+
+
+func test_left_thumb_down_is_the_sticky_grip() -> void:
+	var p := _make(Rect2(0, 0, 1280, 720))
+	var input: AthleteInput = p[0]
+	var c = p[1]
+	c._touch_down(1, Vector2(200, 500))
+	input.poll()
+	check(input.grip_held and not input.grab_held, "left thumb down = grip the line (not an air grab)")
+	c._touch_up(1)
+	input.poll()
+	check(not input.grip_held, "lifting the left thumb lets go")
+	_free(p)

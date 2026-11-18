@@ -42,7 +42,7 @@ func _flag(kind: String, detail: String) -> void:
 
 func _new_plan() -> void:
 	# a "player intention" lasting 1-4 s
-	var kinds := ["pump", "pump", "pump", "flip_back", "flip_front", "twist", "pose", "walk", "idle", "balance_chaos", "grab"]
+	var kinds := ["pump", "pump", "pump", "flip_back", "flip_front", "twist", "pose", "walk", "idle", "balance_chaos", "grab", "sticky"]
 	_plan = {"kind": kinds[rng.randi() % kinds.size()], "len": rng.randf_range(1.0, 4.0),
 		"period": rng.randf_range(0.45, 0.9), "dir": -1.0 if rng.randf() < 0.5 else 1.0,
 		"pose": ["butt", "chest", "back"][rng.randi() % 3]}
@@ -114,6 +114,13 @@ func _drive(dt: float) -> void:
 			i.override_pump = pumping
 			if rng.randf() < 0.02:
 				i.override_trick = _plan["pose"]
+		"sticky":
+			# sit, grip, pump with a random timing quality, let go at a random moment
+			if a.pose == "" and a.state == 0 and _plan_t < 0.1:
+				i.override_trick = "butt"
+			var vf: float = a.line.sample_velocity(a.s).y
+			i.override_grab = "leg" if _plan_t < _plan["len"] * 0.85 else ""
+			i.override_pump = (vf < 0.0) if rng.randf() < 0.8 else (vf > 0.0)
 		"walk":
 			i.override_pump = false
 			i.override_move = _plan["dir"] * 0.7

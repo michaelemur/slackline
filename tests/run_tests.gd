@@ -21,6 +21,9 @@ const UNIT_SUITES := [
 	"res://tests/test_gameflow.gd",
 ]
 const SMOKE := "res://tests/test_gameplay_smoke.gd"
+## Further scene scenarios, run one after another after the smoke test.
+const SCENARIOS := ["res://tests/test_sticky_bounce.gd"]
+var _scenario_i := -1
 
 var _total_pass := 0
 var _failures: Array[String] = []
@@ -47,10 +50,22 @@ func _initialize() -> void:
 
 
 func _on_smoke_finished(passes: int, failures: Array) -> void:
-	print("  %-36s %3d passed, %d failed" % [SMOKE.get_file(), passes, failures.size()])
+	var path: String = SMOKE if _scenario_i < 0 else SCENARIOS[_scenario_i]
+	print("  %-36s %3d passed, %d failed" % [path.get_file(), passes, failures.size()])
 	_total_pass += passes
 	for f in failures:
 		_failures.append(str(f))
+	if is_instance_valid(_smoke):
+		_smoke.queue_free()
+		_smoke = null
+		await process_frame
+	Engine.time_scale = 1.0
+	_scenario_i += 1
+	if _scenario_i < SCENARIOS.size():
+		_smoke = load(SCENARIOS[_scenario_i]).new()
+		root.add_child(_smoke)
+		_smoke.finished.connect(_on_smoke_finished)
+		return
 	_finish()
 
 
