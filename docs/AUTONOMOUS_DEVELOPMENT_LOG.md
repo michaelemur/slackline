@@ -112,3 +112,13 @@ Baseline commit: `ba0cf9e` (pre-roadmap changes)
 - Release readiness and remaining blockers are listed in `docs/RELEASE_READINESS_REPORT.md`. The project remains a tested development build, not a verified mobile release.
 - Traced the renderer/ObjectDB shutdown warnings to two ownership gaps: `Main` eagerly built an inactive Studio root without parenting it, and cinematic unit tests left their `CinematicDirector` nodes alive. Studio now builds only when selected and is freed when returning to the beach; the cinematic tests free each director, and the test runner disposes the gameplay smoke scene before exit.
 - The full suite after these fixes passed **1226 assertions with no ObjectDB, RID, or renderer leak warnings**. A separate main-scene lifecycle probe also exited without those warnings.
+
+## 2026-11-18 — Audit and two-zone controls (Claude, branch `claude/two-zone-controls`)
+
+- Full audit in `docs/CONTROL_ARCHITECTURE_AUDIT.md` (decision: **B — keep the physics, rig, camera and environment; replace the control layer**).
+- First graphical run on the Mac succeeded (Godot 4.7.2 editor, Forward Mobile on Apple M4): the beach, line, athlete and HUD render and the game starts.
+- New `tests/playtest_monkey.gd` (long randomized sessions) found a **confirmed stuck state**: after Stage 6 removed the airborne timeout, an athlete who fell to the sand stayed AIRBORNE forever. Fixed in `_update_airborne`; 0 anomalies in 60+ simulated minutes since.
+- Controls: right hand hold/release + drag-to-aim (takeoff lean ⇒ angular momentum `L = m·v·lever`), hold = tuck in the air, separate grab; left hand floating balance stick. Mid-air torque is no longer on the default controls.
+- Flip crediting uses the net rotation within the clean window; clean window 0.7 rad.
+- Full suite **1239 passed, 0 failed**; smoke 71/71. `tests/measure_aim_flip.gd` measures takeoff rotation (full backflip/frontflip landed by physics at 3.6 m/s takeoff).
+- Not verified: hands-on feel on the Mac (computer use became unavailable mid-session), mobile export/devices.
