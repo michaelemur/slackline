@@ -56,11 +56,6 @@ To run the automated suite from Terminal:
 
 ## Recovery copies
 
-- `/Users/michael/Downloads/slackline_recovery_before_autonomous_20261117`
-- `/Users/michael/Downloads/slackline_recovery_after_stage12_20261117`
-- `/Users/michael/Downloads/slackline_recovery_before_stage13_20261117`
-- `/Users/michael/Downloads/slackline_recovery_after_stage13_20261117`
-- `/Users/michael/Downloads/slackline_recovery_before_shutdown_cleanup_20261118`
-- `/Users/michael/Downloads/slackline_recovery_after_shutdown_cleanup_20261118`
+Consolidated on 2026-11-18: see `~/Downloads/Slackline Game/README.md`. Every Codex stage is in this repository's git history; compressed archives of the project (with git) and of the three pre-baseline snapshots are in `~/Downloads/Slackline Game/Backups/`.
 
 The Stage 13 source changes are committed as `d05599c`; the shutdown cleanup and regression fix are included in the integration follow-up on `codex/autonomous-development`.
