@@ -54,6 +54,10 @@ func _on_smoke_finished(passes: int, failures: Array) -> void:
 
 
 func _finish() -> void:
+	if is_instance_valid(_smoke):
+		_smoke.queue_free()
+		_smoke = null
+		await process_frame
 	print("")
 	for f in _failures:
 		print("FAIL ", f)

@@ -106,7 +106,9 @@ Baseline commit: `ba0cf9e` (pre-roadmap changes)
 
 ## Stage 14 details
 
-- Ran the complete regression suite against the actual project after integration: **1223 passed, 0 failed**. The gameplay smoke completed 34 jumps and 30 landings; its worst solver step was **0.66 ms** in this desktop headless run.
-- `git diff --check` passed. The full project has a new Stage 13 recovery checkpoint and a Stage 13 implementation commit.
+- Ran the complete regression suite against the actual project after integration: **1226 passed, 0 failed**. The gameplay smoke completed 34 jumps and 30 landings; its worst solver step was **0.89 ms** in this desktop headless run.
+- `git diff --check` passed. The pre-cleanup project was protected at `/Users/michael/Downloads/slackline_recovery_before_shutdown_cleanup_20261118`; a post-fix recovery copy is recorded in the release report.
 - Made a fresh desktop launch attempt. The Godot process appeared in the desktop app inventory, but the desktop automation could not acquire its app window; earlier Launch Services and direct GUI launch attempts also failed. No visual playtest is claimed.
 - Release readiness and remaining blockers are listed in `docs/RELEASE_READINESS_REPORT.md`. The project remains a tested development build, not a verified mobile release.
+- Traced the renderer/ObjectDB shutdown warnings to two ownership gaps: `Main` eagerly built an inactive Studio root without parenting it, and cinematic unit tests left their `CinematicDirector` nodes alive. Studio now builds only when selected and is freed when returning to the beach; the cinematic tests free each director, and the test runner disposes the gameplay smoke scene before exit.
+- The full suite after these fixes passed **1226 assertions with no ObjectDB, RID, or renderer leak warnings**. A separate main-scene lifecycle probe also exited without those warnings.

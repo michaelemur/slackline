@@ -36,6 +36,15 @@ var _high_jump_started := false
 func _ready() -> void:
 	main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
+	_check(main.get("studio") == null,
+		"inactive analysis studio is not allocated during normal beach gameplay")
+	main.call("toggle_environment")
+	var studio := main.get("studio") as Node3D
+	_check(studio != null and studio.get_parent() == main,
+		"analysis studio is created under the scene owner when requested")
+	main.call("toggle_environment")
+	_check(main.get("studio") == null and main.get_node("Beach").get_parent() == main,
+		"returning to beach releases the temporary analysis studio")
 	athlete = main.get_node("Athlete")
 	line = main.get_node("Slackline")
 	var lab: LabPanel = main.get_node("LabPanel")

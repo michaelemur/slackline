@@ -3,7 +3,7 @@
 **Review date:** 2026-11-17  
 **Project:** `/Users/michael/Downloads/slackline`  
 **Engine:** Godot 4.7.2  
-**Branch / latest implementation commit:** `codex/autonomous-development` / `d05599c`
+**Branch / Stage 13 implementation commit:** `codex/autonomous-development` / `d05599c`
 
 ## Readiness decision
 
@@ -20,8 +20,8 @@ The project passes its complete automated regression and headless gameplay smoke
 
 ## Verification
 
-- Complete suite on the updated project: **1223 passed, 0 failed**.
-- Gameplay smoke: **68 passed, 0 failed**; 34 jumps, 30 landings, and 0.66 ms worst solver step in this desktop headless run.
+- Complete suite on the updated project: **1226 passed, 0 failed**.
+- Gameplay smoke: **71 passed, 0 failed**; 34 jumps, 30 landings, and 0.89 ms worst solver step in this desktop headless run.
 - Touch layout tests: **27 passed**.
 - Scenery batching regression covers 15m, 30m, and 40m layouts.
 - Desktop headless solver profile (median / p95 / p99 / max):
@@ -41,7 +41,7 @@ The project passes its complete automated regression and headless gameplay smoke
 - **Graphical QA:** Godot's GUI window could not be acquired by desktop automation. Visual appearance, camera shots, transitions, and touch hit targets have not been manually played through.
 - **Mobile export:** The project uses the Mobile renderer, but has no export presets or installed Godot export templates. Android SDK/ADB is absent. The machine has Command Line Tools rather than full Xcode; `xcodebuild` reports that full Xcode is required. No device or signing setup was available.
 - **Audio:** The event routing is in place, but there are no ambience, landing, trick, UI, or music assets.
-- **Shutdown diagnostics:** Godot reports renderer/ObjectDB/RID resource warnings after the test suite exits (including 23 ObjectDB instances). This also appeared in earlier runs; its source has not been isolated.
+- **Shutdown diagnostics:** Follow-up investigation traced the warnings to an unparented, eagerly created Studio environment plus cinematic test nodes that were not freed. Studio is now created on demand and freed when leaving analysis mode; tests free their directors and the runner cleans up the smoke scene. The latest full run exited without ObjectDB, RID, or renderer leak warnings.
 - **Contact validation:** Automated coverage and the gameplay smoke pass, but varied real-time chest/back landings and repeated trick chains still need graphical and device playtesting.
 
 ## How to open and run
@@ -60,5 +60,7 @@ To run the automated suite from Terminal:
 - `/Users/michael/Downloads/slackline_recovery_after_stage12_20261117`
 - `/Users/michael/Downloads/slackline_recovery_before_stage13_20261117`
 - `/Users/michael/Downloads/slackline_recovery_after_stage13_20261117`
+- `/Users/michael/Downloads/slackline_recovery_before_shutdown_cleanup_20261118`
+- `/Users/michael/Downloads/slackline_recovery_after_shutdown_cleanup_20261118`
 
-The Stage 13 source changes are committed as `d05599c` on `codex/autonomous-development`.
+The Stage 13 source changes are committed as `d05599c`; the shutdown cleanup and regression fix are included in the integration follow-up on `codex/autonomous-development`.

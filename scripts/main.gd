@@ -127,7 +127,6 @@ func _build_environment() -> void:
 	beach = BeachScript.new()
 	beach.name = "Beach"
 	beach.call("configure_for_line_length", line.chord_length())
-	studio = _build_studio()
 	add_child(beach)
 	# Floor collider for falls (shared by both looks). No mattress.
 	var ground := StaticBody3D.new()
@@ -143,13 +142,18 @@ func _build_environment() -> void:
 
 
 func toggle_environment() -> void:
-	var show_beach := beach.get_parent() == null
-	if show_beach:
-		remove_child(studio)
-		add_child(beach)
-	else:
+	if beach.get_parent() != null:
 		remove_child(beach)
+		if studio == null:
+			studio = _build_studio()
+			studio.name = "Studio"
 		add_child(studio)
+	else:
+		if studio != null:
+			remove_child(studio)
+			studio.free()
+			studio = null
+		add_child(beach)
 
 
 func _build_studio() -> Node3D:

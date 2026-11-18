@@ -47,6 +47,7 @@ func test_normal_bouncing_is_calm() -> void:
 		prev = d.shot["pull"]
 	check(d.shot["pull"] < 0.01 and d.time_scale == 1.0, "bouncing on the line: no pull-back, normal speed")
 	check(max_step < 0.01, "no sudden camera moves (max step %.3f)" % max_step)
+	d.free()
 
 
 func test_high_jump_pulls_back_smoothly() -> void:
@@ -57,6 +58,7 @@ func test_high_jump_pulls_back_smoothly() -> void:
 	check(b["ts"] == 1.0, "an ordinary high jump has no slow motion")
 	_run(d, 3.0, false, 0.0, 0.0, false)
 	check(d.shot["pull"] < 0.05, "camera returns after landing (%.2f)" % d.shot["pull"])
+	d.free()
 
 
 func test_camera_framing_distance_scales_without_an_altitude_ceiling() -> void:
@@ -72,6 +74,7 @@ func test_trick_moves_camera_slightly() -> void:
 	d.best_launch = 10.0
 	var b := _fly(d, 3.5, true)
 	check(b["trick"] > 0.5 and b["close"] == 0.0, "trick: slight orbit, no close-up without a super rebound")
+	d.free()
 
 
 func test_hard_trick_triggers_hero_shot_and_returns_to_gameplay() -> void:
@@ -82,6 +85,7 @@ func test_hard_trick_triggers_hero_shot_and_returns_to_gameplay() -> void:
 	check(d.shot["hero"] > 0.3, "hero shot blends in instead of snapping")
 	_run(d, 2.0, false, 0.0, 0.0, false)
 	check(d.shot["hero"] < 0.1, "hero shot returns to normal camera framing")
+	d.free()
 
 
 func test_slow_motion_exits_before_a_near_landing() -> void:
@@ -95,6 +99,7 @@ func test_slow_motion_exits_before_a_near_landing() -> void:
 	_run(d, 0.6, false, 0.0, 0.0, false)
 	check(d.time_scale == 1.0 and not d.is_slowmo(), "slow motion reaches normal speed before contact")
 	Engine.time_scale = 1.0
+	d.free()
 
 
 func test_super_rebound_reveal_then_close_and_slowmo() -> void:
@@ -107,6 +112,7 @@ func test_super_rebound_reveal_then_close_and_slowmo() -> void:
 	check(b["close"] > 0.3, "moves to a close cinematic angle during the trick (%.2f)" % b["close"])
 	check(absf(b["ts"] - 0.3) < 0.05, "slow motion reaches ~30%% (%.2f)" % b["ts"])
 	Engine.time_scale = 1.0
+	d.free()
 
 
 func test_slowmo_eases_in_and_out_and_returns() -> void:
@@ -124,6 +130,7 @@ func test_slowmo_eases_in_and_out_and_returns() -> void:
 	check(d.time_scale == 1.0 and Engine.time_scale == 1.0, "back to normal speed after the moment")
 	check(t < 1.6, "short cinematic moment (%.2f s)" % t)
 	check(not d.request_slowmo("again", 0.5), "cooldown: not constant")
+	d.free()
 
 
 func test_combo_landing_zoom_shake_slowmo() -> void:
@@ -136,9 +143,11 @@ func test_combo_landing_zoom_shake_slowmo() -> void:
 	check(d.shot["combo"] > 0.5, "subtle combo zoom")
 	_run(d, 4.0, false, 0.0, 0.0, false)
 	check(d.shot["trauma"] == 0.0 and d.shot["combo"] < 0.05 and Engine.time_scale == 1.0, "everything settles back to normal play")
+	d.free()
 
 
 func test_two_trick_landing_no_slowmo() -> void:
 	var d := _dir()
 	d.on_land(3.0, 2)
 	check(not d.is_slowmo(), "a 2-trick combo shakes/zooms but keeps normal speed")
+	d.free()
