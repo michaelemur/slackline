@@ -77,6 +77,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		athlete.visual.set_use_character(not athlete.visual.use_character)
 	elif event.is_action_pressed("toggle_com"):
 		athlete.visual.show_com = not athlete.visual.show_com
+	elif event.is_action_pressed("toggle_music"):
+		audio_director.toggle_music()
 	elif event.is_action_pressed("slow_motion"):
 		Engine.time_scale = 0.35 if Engine.time_scale > 0.9 else 1.0
 	elif event.is_action_pressed("demo_toggle"):

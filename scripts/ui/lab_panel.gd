@@ -201,7 +201,7 @@ func _build_hud() -> void:
 		+ "   aim the takeoff while loading: UP/J backflip, DOWN/K frontflip,\n"
 		+ "   LEFT/RIGHT (H/L) twist.  F = grab (tucked or straight)\n"
 		+ "LEFT HAND  A/D balance, W/S walk (in the air: small attitude fix)\n"
-		+ "Z/X/C butt / chest / back   1/3/4 line   R reset   ESC pause")
+		+ "Z/X/C butt / chest / back   1/3/4 line   N music on/off   R reset   ESC pause")
 	help_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_help_panel.add_child(help_text)
 

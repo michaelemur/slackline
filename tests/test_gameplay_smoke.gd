@@ -52,7 +52,7 @@ func _ready() -> void:
 	_check(not lab._hud.text.contains("Tension") and not lab._hud.text.contains("W/S"),
 		"normal HUD hides dense physics and keyboard reference text")
 	var help_label := lab._help_panel.get_child(0) as Label
-	_check(help_label.text.contains("W/S move"),
+	_check(help_label.text.contains("hold SPACE") and help_label.text.contains("A/D balance"),
 		"the full desktop control reference remains available on demand")
 	lab.toggle_pause()
 	_check(get_tree().paused and lab._pause_overlay.visible, "pause opens a usable overlay")

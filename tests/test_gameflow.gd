@@ -23,9 +23,12 @@ func test_pause_action_is_registered() -> void:
 
 func test_audio_director_is_safe_with_missing_optional_assets() -> void:
 	var audio: AudioDirector = AudioScript.new()
-	audio._ready()
-	check(audio._voices.size() == 4, "audio director creates a small overlapping SFX voice pool")
-	check(audio.ocean_ambience == null and audio.wind_ambience == null,
-		"project audio assets remain explicitly unassigned")
+	audio._load_defaults()
+	for i in 4:
+		audio._voices.append(AudioStreamPlayer.new())
+	check(audio.ocean_ambience != null and audio.music != null,
+		"generated project audio is assigned by default")
 	check(not audio._play(null), "missing sound streams safely produce no playback")
+	for v in audio._voices:
+		v.free()
 	audio.free()

@@ -13,6 +13,7 @@ const UNIT_SUITES := [
 	"res://tests/test_body.gd",
 	"res://tests/test_rebound_lab.gd",
 	"res://tests/test_cinematic.gd",
+	"res://tests/test_audio.gd",
 	"res://tests/test_touch_controls.gd",
 	"res://tests/test_progression.gd",
 	"res://tests/test_line_config.gd",

@@ -40,6 +40,7 @@ const BINDINGS := {
 	"toggle_character": [KEY_V],
 	"demo_toggle": [KEY_T],
 	"slow_motion": [KEY_M],
+	"toggle_music": [KEY_N],
 }
 
 
