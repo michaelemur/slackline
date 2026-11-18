@@ -1,21 +1,34 @@
 class_name TouchControls
 extends Control
-## Lightweight mobile controls. Each analog pad owns an independent pointer,
-## allowing simultaneous movement and balance input with multiple fingers.
+## Two-zone mobile controls (Flip Master-inspired, adapted to a trickline).
+##
+## LEFT half: floating balance stick. Touch anywhere, drag: x = weight shift,
+##   y = walk along the line (on the feet) / small air attitude correction.
+## RIGHT half: touch-and-hold. Hold = load the line (or tuck in the air),
+##   release = drive (or open/straight). While holding, drag from where the
+##   finger went down to AIM the takeoff lean: up = backflip, down = frontflip,
+##   sideways = twist.
+## Small buttons (top right): GRAB (hold, works tucked or straight) and the
+##   line positions BUTT / CHEST / BACK (tap).
+## Every finger is tracked independently, so both hands work at once.
 
-const PAD_RADIUS := 62.0
+const STICK_RADIUS := 70.0
+const AIM_RADIUS := 60.0
 const EDGE := 24.0
-const BUTTON_RADIUS := 34.0
-const ACTION_LABELS := ["BACK", "FRONT", "TWIST L", "TWIST R", "GRAB L", "GRAB R"]
+const BUTTON_RADIUS := 30.0
+const ACTION_LABELS := ["GRAB", "BUTT", "CHEST", "BACK"]
+const POSITION_IDS := ["", "butt", "chest", "back"]
 
 var athlete_input: AthleteInput
 var safe_rect := Rect2()
-var _move_pointer := -1
-var _balance_pointer := -1
-var _pump_pointer := -1
-var _trick_pointers: Dictionary = {}
-var _move_value := Vector2.ZERO
-var _balance_value := Vector2.ZERO
+var _stick_pointer := -1
+var _stick_origin := Vector2.ZERO
+var _stick_value := Vector2.ZERO
+var _hold_pointer := -1
+var _hold_origin := Vector2.ZERO
+var _aim_value := Vector2.ZERO
+var _button_pointers: Dictionary = {}
+
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -23,10 +36,12 @@ func _ready() -> void:
 	_refresh_safe_rect()
 	queue_redraw()
 
+
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED or what == NOTIFICATION_WM_SIZE_CHANGED:
 		_refresh_safe_rect()
 		queue_redraw()
+
 
 func _refresh_safe_rect() -> void:
 	var size := get_viewport_rect().size
@@ -40,53 +55,64 @@ func _refresh_safe_rect() -> void:
 		inset.w = maxf(EDGE, size.y * float(screen.y - safe.end.y) / screen.y)
 	safe_rect = Rect2(Vector2(inset.x, inset.y), Vector2(size.x - inset.x - inset.z, size.y - inset.y - inset.w))
 
-func _pad_center(left: bool) -> Vector2:
-	return Vector2(safe_rect.position.x + PAD_RADIUS + 18.0 if left else safe_rect.end.x - PAD_RADIUS - 18.0,
-		safe_rect.end.y - PAD_RADIUS - 20.0)
 
-func _pump_center() -> Vector2:
-	return Vector2(safe_rect.get_center().x, safe_rect.end.y - BUTTON_RADIUS - 18.0)
-
-func _trick_center(index: int) -> Vector2:
-	if safe_rect.size.y < 560.0:
-		var compact_radius := 22.0
-		var spacing := compact_radius * 2.0 + 14.0
-		var column := index % 2
-		var row := index / 2
-		return Vector2(safe_rect.end.x - 200.0 - column * spacing,
-			safe_rect.position.y + compact_radius + 18.0 + row * spacing)
-	return Vector2(safe_rect.end.x - BUTTON_RADIUS - 18.0,
-		safe_rect.position.y + BUTTON_RADIUS + 18.0 + index * (BUTTON_RADIUS * 2.0 + 12.0))
+func _button_radius() -> float:
+	return 22.0 if safe_rect.size.y < 420.0 else BUTTON_RADIUS
 
 
-func _trick_radius() -> float:
-	return 22.0 if safe_rect.size.y < 560.0 else BUTTON_RADIUS
+## Buttons sit in a row along the top of the right half (away from the thumb).
+func _button_center(index: int) -> Vector2:
+	var r := _button_radius()
+	var spacing := r * 2.0 + 12.0
+	var cols := 4 if safe_rect.size.x >= 600.0 else 2
+	var col := index % cols
+	var row := index / cols
+	return Vector2(safe_rect.end.x - r - 8.0 - col * spacing, safe_rect.position.y + r + 56.0 + row * spacing)
+
+
+func _is_left(position: Vector2) -> bool:
+	return position.x < safe_rect.get_center().x
+
+
+## Idle hints: where the thumbs usually rest.
+func _stick_home() -> Vector2:
+	return Vector2(safe_rect.position.x + STICK_RADIUS + 30.0, safe_rect.end.y - STICK_RADIUS - 30.0)
+
+
+func _hold_home() -> Vector2:
+	return Vector2(safe_rect.end.x - AIM_RADIUS - 50.0, safe_rect.end.y - AIM_RADIUS - 40.0)
+
 
 func _draw() -> void:
 	if not is_visible_in_tree():
 		return
-	_draw_pad(_pad_center(true), _move_value, "MOVE")
-	_draw_pad(_pad_center(false), _balance_value, "BALANCE")
-	_draw_button(_pump_center(), "JUMP/TUCK", _pump_pointer >= 0)
-	var trick_radius := _trick_radius()
-	var trick_font := 8 if trick_radius < BUTTON_RADIUS else 11
+	var sc := _stick_origin if _stick_pointer >= 0 else _stick_home()
+	draw_circle(sc, STICK_RADIUS, Color(0.03, 0.05, 0.08, 0.25))
+	draw_arc(sc, STICK_RADIUS, 0.0, TAU, 48, Color(0.85, 0.93, 1.0, 0.5), 2.0)
+	draw_circle(sc + _stick_value * STICK_RADIUS, 24.0, Color(0.88, 0.95, 1.0, 0.75))
+	_label(sc + Vector2(0, STICK_RADIUS + 18.0), "BALANCE", 12)
+	var hc := _hold_origin if _hold_pointer >= 0 else _hold_home()
+	var active := _hold_pointer >= 0
+	draw_circle(hc, AIM_RADIUS, Color(0.95, 0.45, 0.1, 0.35 if active else 0.18))
+	draw_arc(hc, AIM_RADIUS, 0.0, TAU, 48, Color(1, 0.85, 0.6, 0.7), 2.0)
+	if active:
+		draw_line(hc, hc + _aim_value * AIM_RADIUS, Color(1, 1, 1, 0.9), 4.0)
+		draw_circle(hc + _aim_value * AIM_RADIUS, 12.0, Color(1, 1, 1, 0.85))
+	_label(hc + Vector2(0, -AIM_RADIUS - 8.0), "BACK", 10)
+	_label(hc + Vector2(0, AIM_RADIUS + 18.0), "HOLD  -  FRONT", 10)
+	var r := _button_radius()
 	for i in ACTION_LABELS.size():
-		_draw_button(_trick_center(i), ACTION_LABELS[i], _trick_pointers.values().has(i),
-			trick_radius, trick_font)
+		var c := _button_center(i)
+		var on := _button_pointers.values().has(i)
+		draw_circle(c, r, Color(0.04, 0.07, 0.12, 0.62 if on else 0.38))
+		draw_arc(c, r, 0.0, TAU, 32, Color(1, 1, 1, 0.7), 2.0)
+		_label(c + Vector2(0, 4.0), ACTION_LABELS[i], 9 if r < BUTTON_RADIUS else 10)
 
-func _draw_pad(center: Vector2, value: Vector2, label: String) -> void:
-	draw_circle(center, PAD_RADIUS, Color(0.03, 0.05, 0.08, 0.28))
-	draw_arc(center, PAD_RADIUS, 0.0, TAU, 48, Color(0.85, 0.93, 1.0, 0.55), 2.0)
-	draw_circle(center + Vector2(value.x * PAD_RADIUS * 0.55, 0.0), 22.0, Color(0.88, 0.95, 1.0, 0.78))
-	draw_string(ThemeDB.fallback_font, center + Vector2(-PAD_RADIUS, PAD_RADIUS + 18.0), label,
-		HORIZONTAL_ALIGNMENT_CENTER, PAD_RADIUS * 2.0, 12, Color(1, 1, 1, 0.85))
 
-func _draw_button(center: Vector2, label: String, active: bool,
-		radius: float = BUTTON_RADIUS, font_size: int = 11) -> void:
-	draw_circle(center, radius, Color(0.04, 0.07, 0.12, 0.62 if active else 0.38))
-	draw_arc(center, radius, 0.0, TAU, 32, Color(1, 1, 1, 0.7), 2.0)
-	draw_string(ThemeDB.fallback_font, center + Vector2(-radius, 5.0), label,
-		HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, font_size, Color.WHITE)
+func _label(center: Vector2, text: String, size: int) -> void:
+	draw_string(ThemeDB.fallback_font, center + Vector2(-60.0, 0.0), text,
+		HORIZONTAL_ALIGNMENT_CENTER, 120.0, size, Color(1, 1, 1, 0.85))
+
 
 func _input(event: InputEvent) -> void:
 	if athlete_input == null or not visible:
@@ -99,73 +125,62 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventScreenDrag:
 		_touch_drag(event.index, event.position)
 
+
 ## Public event handlers are also used by deterministic headless UI tests.
 func _touch_down(index: int, position: Vector2) -> void:
-	if _move_pointer < 0 and position.distance_to(_pad_center(true)) <= PAD_RADIUS * 1.4:
-		_move_pointer = index
-		_update_pad(index, position, true)
-	elif _balance_pointer < 0 and position.distance_to(_pad_center(false)) <= PAD_RADIUS * 1.4:
-		_balance_pointer = index
-		_update_pad(index, position, false)
-	elif _pump_pointer < 0 and position.distance_to(_pump_center()) <= BUTTON_RADIUS * 1.5:
-		_pump_pointer = index
-		athlete_input.touch_pump_held = true
-	else:
-		var radius := _trick_radius()
-		var hit_radius := radius * (1.25 if radius < BUTTON_RADIUS else 1.5)
-		for i in ACTION_LABELS.size():
-			if position.distance_to(_trick_center(i)) <= hit_radius:
-				_trick_pointers[index] = i
-				_update_aerial_actions()
-				break
+	var r := _button_radius()
+	for i in ACTION_LABELS.size():
+		if position.distance_to(_button_center(i)) <= r * 1.3:
+			_button_pointers[index] = i
+			if POSITION_IDS[i] != "":
+				athlete_input.touch_trick = POSITION_IDS[i]
+			_update_buttons()
+			queue_redraw()
+			return
+	if _is_left(position):
+		if _stick_pointer < 0:
+			_stick_pointer = index
+			_stick_origin = position
+			_set_stick(Vector2.ZERO)
+	elif _hold_pointer < 0:
+		_hold_pointer = index
+		_hold_origin = position
+		_aim_value = Vector2.ZERO
+		athlete_input.touch_hold = true
+		athlete_input.touch_aim = Vector2.ZERO
 	queue_redraw()
+
 
 func _touch_drag(index: int, position: Vector2) -> void:
-	if index == _move_pointer:
-		_update_pad(index, position, true)
-	elif index == _balance_pointer:
-		_update_pad(index, position, false)
+	if index == _stick_pointer:
+		_set_stick((position - _stick_origin) / STICK_RADIUS)
+	elif index == _hold_pointer:
+		var v := ((position - _hold_origin) / AIM_RADIUS).limit_length(1.0)
+		_aim_value = v
+		# screen y grows downward: drag UP = lean back (backflip) = aim.y > 0
+		athlete_input.touch_aim = Vector2(v.x, -v.y)
 	queue_redraw()
 
-func _update_pad(_index: int, position: Vector2, movement: bool) -> void:
-	var center := _pad_center(movement)
-	var value := (position - center) / PAD_RADIUS
-	value.x = clampf(value.x, -1.0, 1.0)
-	value.y = clampf(value.y, -1.0, 1.0)
-	if movement:
-		_move_value = value
-		athlete_input.touch_move_axis = value.x
-	else:
-		_balance_value = value
-		athlete_input.touch_balance_axis = value.x
+
+func _set_stick(v: Vector2) -> void:
+	_stick_value = v.limit_length(1.0)
+	# screen up = walk forward
+	athlete_input.touch_stick = Vector2(_stick_value.x, -_stick_value.y)
+
 
 func _touch_up(index: int) -> void:
-	if index == _move_pointer:
-		_move_pointer = -1
-		_move_value = Vector2.ZERO
-		athlete_input.touch_move_axis = 0.0
-	if index == _balance_pointer:
-		_balance_pointer = -1
-		_balance_value = Vector2.ZERO
-		athlete_input.touch_balance_axis = 0.0
-	if index == _pump_pointer:
-		_pump_pointer = -1
-		athlete_input.touch_pump_held = false
-	_trick_pointers.erase(index)
-	_update_aerial_actions()
+	if index == _stick_pointer:
+		_stick_pointer = -1
+		_set_stick(Vector2.ZERO)
+	if index == _hold_pointer:
+		_hold_pointer = -1
+		_aim_value = Vector2.ZERO
+		athlete_input.touch_hold = false
+		athlete_input.touch_aim = Vector2.ZERO
+	_button_pointers.erase(index)
+	_update_buttons()
 	queue_redraw()
 
 
-func _update_aerial_actions() -> void:
-	var flip := 0.0
-	var twist := 0.0
-	for action_index in _trick_pointers.values():
-		match int(action_index):
-			0: flip -= 1.0
-			1: flip += 1.0
-			2: twist -= 1.0
-			3: twist += 1.0
-	athlete_input.touch_flip_axis = clampf(flip, -1.0, 1.0)
-	athlete_input.touch_twist_axis = clampf(twist, -1.0, 1.0)
-	athlete_input.touch_grab_left = _trick_pointers.values().has(4)
-	athlete_input.touch_grab_right = _trick_pointers.values().has(5)
+func _update_buttons() -> void:
+	athlete_input.touch_grab = _button_pointers.values().has(0)

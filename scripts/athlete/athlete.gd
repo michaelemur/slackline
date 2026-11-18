@@ -18,6 +18,21 @@ enum State { ON_LINE, AIRBORNE, FALLEN }
 
 const ReboundMeterScript := preload("res://scripts/athlete/rebound_meter.gd")
 
+## --- Takeoff rotation from the body lean (two-zone controls) -----------
+## The right-hand AIM leans the body fore/aft while loading and pushing. The
+## line pushes through the feet, the centre of mass is offset by the lean, so
+## the push is off-axis: L = m * v_up * lever (lever = COM height * sin lean).
+## Nothing adds rotation in the air: tuck/open only change the speed.
+@export var aim_lean_max: float = 0.26          # rad of fore/aft lean at full aim
+@export var pose_takeoff_lever: float = 0.16    # m, hip drive lever from butt/chest/back
+@export var twist_set_gain: float = 6.0         # kg m^2/s of twist L at full aim and push
+## Air: arms/hips can re-orient the body a little without any new angular
+## momentum (shape change); bounded per flight.
+@export var air_attitude_rate: float = 0.9      # rad/s
+@export var air_attitude_max: float = 0.35      # rad per flight
+var takeoff_aim: Vector2 = Vector2.ZERO
+var _aim_seen_t: float = 0.0
+
 @export var athlete_mass: float = 75.0
 @export var walk_speed: float = 0.9               # m/s along the line
 ## Leaning into the takeoff (W/S held) sends you along the line.
@@ -235,6 +250,14 @@ func pre_line_step(dt: float) -> void:
 			if not direct_rotation:
 				tricks.request(input.trick, state == State.AIRBORNE)
 	tricks.tick_message(dt)
+	if state == State.ON_LINE:
+		if input.aim.length() > 0.15:
+			takeoff_aim = input.aim
+			_aim_seen_t = 0.0
+		else:
+			_aim_seen_t += dt
+			if _aim_seen_t > 0.35:
+				takeoff_aim = Vector2.ZERO   # aim let go well before the push
 	_update_arm_swing(dt)
 	pump = 1.0 if input.pump_held else 0.0
 	leg.body_mass = athlete_mass
@@ -432,6 +455,12 @@ func _update_on_line(dt: float) -> void:
 	_prev_walk_v = _walk_v
 	# lean into the acceleration (like anyone starting/stopping a walk)
 	balance.phi_ref = clampf(a_walk / 9.81, -0.1, 0.1)
+	# AIM: lean back (backflip) / forward (frontflip) while loading + driving
+	# (only during the drive: held statically, a lean that big tips you over)
+	# and only on a real drive off a rising line - a lean on a weak push that
+	# doesn't leave the line just tips you over)
+	if not input.hold and foot_velocity.y > 0.8 and (_push_left > 0.0 or leg.leg_speed(line.solver) > 0.05):
+		balance.phi_ref += -takeoff_aim.y * aim_lean_max
 	balance.step_fb(dt, foot_accel.dot(line.axis()) + a_walk, foot_accel.y)
 	_lateral_force = balance.reaction_lateral_force(athlete_mass)
 	global_transform = Transform3D(_line_basis(), foot + Vector3.UP * 0.01)
@@ -449,6 +478,7 @@ func _update_airborne(dt: float) -> void:
 	balance.step_air(dt, input.balance_axis)
 	# Hold the flip key or SPACE in the air = tuck (faster rotation).
 	tricks.update_air(dt, input.tuck, input.grab, input.flip_axis, input.twist_axis)
+	tricks.adjust_attitude(dt, input.stick.y * air_attitude_rate, air_attitude_max)
 	# Prepare the landing: straight legs for feet, or the chosen line-trick
 	# position (Z/X/C pressed in the air).
 	var land_leg := leg.l_pose if tricks.queued_pose != "" else leg.l_max
@@ -490,7 +520,11 @@ func _update_airborne(dt: float) -> void:
 					last_landing_failure_reason = reason
 					_record_contact_event("landing rejected: " + reason)
 	# Missed the line: below it, descending, close to the ground.
-	if air_time > 0.15 and vy < 0.0 and feet.y < line.ground_height + 0.25:
+	# (no "descending" requirement once the body is down at the ground: the
+	# ground collider stops it at vy = 0, which used to leave the athlete
+	# stuck in AIRBORNE on the sand forever)
+	var low: float = minf(feet.y, global_position.y)
+	if air_time > 0.15 and vy < 0.5 and low < line.ground_height + 0.25:
 		last_landing_failure_reason = "missed line; ground clearance reached"
 		fall(last_landing_failure_reason)
 	elif not global_position.is_finite() or not linear_velocity.is_finite():
@@ -574,9 +608,25 @@ func launch(v: Vector3) -> void:
 	else:
 		tricks.on_launch(v.y, from, from_angle)
 		tricks.hop = false
+	if not tricks.hop and tricks.active == "" and tricks.queued == "":
+		_set_takeoff_rotation(v.y, contact_source)
 	_prev_air_dy = 1.0
 	last_landing_failure_reason = ""
 	_record_contact_event("takeoff from " + (contact_source if contact_source != "" else "feet"))
+
+
+## Angular momentum at takeoff from how the body was leaning on the push.
+func _set_takeoff_rotation(v_up: float, from_pose: String) -> void:
+	var push := maxf(v_up, 0.0)
+	var lever: float
+	if from_pose == "":
+		lever = balance.com_height * sin(balance.phi)   # the real lean (physics state)
+	else:
+		lever = -takeoff_aim.y * pose_takeoff_lever
+	var l_pitch := clampf(athlete_mass * push * lever, -tricks.l_max, tricks.l_max)
+	var l_twist := takeoff_aim.x * twist_set_gain * clampf(push / 4.0, 0.3, 1.0)
+	tricks.launch_spin(l_pitch, l_twist)
+	takeoff_aim = Vector2.ZERO
 
 
 func _award_line_pose(contact_type: String) -> void:

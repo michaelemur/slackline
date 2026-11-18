@@ -43,7 +43,7 @@ const LINE_TRICKS := {
 ## position, e.g. chest -> backflip -> feet is -450 deg.
 const POSE_ANGLE := {"": 0.0, "feet": 0.0, "butt": 0.0, "chest": PI * 0.5, "back": -PI * 0.5}
 const POSE_NAMES := {"": "", "feet": "", "butt": "Butt", "chest": "Chest", "back": "Back"}
-const LAND_TOLERANCE := 0.6     # rad, clean landing window
+const LAND_TOLERANCE := 0.7     # rad (40 deg), clean landing window
 const SAVE_MIN := 0.6           # rad, beyond clean: save onto chest/back...
 const SAVE_MAX := 2.2           # ...up to here; more = bail
 
@@ -189,6 +189,7 @@ func on_launch(v_up: float, from_pose: String = "", from_angle: float = 0.0) -> 
 	active = ""
 	timing = ""
 	_flip_started = false
+	_attitude_used = 0.0
 	_player_flip_controlled = false
 	_player_twist_controlled = false
 	_direct_pitch_progress = 0.0
@@ -217,6 +218,31 @@ func on_launch(v_up: float, from_pose: String = "", from_angle: float = 0.0) -> 
 ## landing position in the air is only possible on the way up (before apex).
 ## Ballistic flight time to the landing contact: up with v, down to a point
 ## 'drop' metres below the takeoff (lower when landing in a position).
+## Rotation set by the body at takeoff (two-zone controls): the player's
+## lean decides the angular momentum; no assist steers it afterwards.
+var _attitude_used: float = 0.0
+
+
+func launch_spin(lp: float, lt: float) -> void:
+	_attitude_used = 0.0
+	if absf(lp) > 2.0:
+		l_pitch += lp
+		_flip_started = true
+		_player_flip_controlled = true
+	if absf(lt) > 0.3:
+		l_twist = clampf(l_twist + lt, -twist_l_max, twist_l_max)
+		_player_twist_controlled = true
+
+
+## Arms/hips re-orient the body a little (no change of angular momentum).
+func adjust_attitude(dt: float, rate: float, limit: float) -> void:
+	if absf(rate) < 1e-3:
+		return
+	var step := clampf(rate * dt, -limit - _attitude_used, limit - _attitude_used)
+	_attitude_used += step
+	pitch += step
+
+
 func flight_time_for(pose_id: String) -> float:
 	var drop := launch_drop + (pose_drop if pose_id != "" and pose_id != "feet" else 0.0)
 	var v := maxf(v_launch, 0.5)
@@ -365,25 +391,22 @@ func update_air(dt: float, tuck_input: float = 0.0, grab_input: String = "",
 		active = ""
 
 
-func _track_direct_pitch(delta_pitch: float) -> void:
-	if absf(delta_pitch) < 1e-6:
-		return
-	var direction := signf(delta_pitch)
-	if _direct_pitch_direction != direction:
-		_direct_pitch_direction = direction
-		_direct_pitch_progress = 0.0
-	_direct_pitch_progress += absf(delta_pitch)
-	while _direct_pitch_progress >= TAU:
-		_direct_pitch_progress -= TAU
+func _track_direct_pitch(_delta_pitch: float) -> void:
+	# Count from the net rotation since takeoff (minus any planned set and the
+	# shape-change attitude adjustment). A flip counts once it is within the
+	# clean-landing window of a full turn; reversing is impossible in the air.
+	var set_part := (land_target - pitch0) * clampf(air_t / maxf(set_T, 0.01), 0.0, 1.0)
+	var net := pitch - pitch0 - set_part - _attitude_used
+	var n := int(floor((absf(net) + LAND_TOLERANCE) / TAU))
+	var direction := signf(net)
+	while _flips_counted < n:
 		_flips_counted += 1
-		var count := 0
 		var base := "Frontflip" if direction > 0.0 else "Backflip"
 		if direction > 0.0:
 			_direct_front_count += 1
-			count = _direct_front_count
 		else:
 			_direct_back_count += 1
-			count = _direct_back_count
+		var count := _direct_front_count if direction > 0.0 else _direct_back_count
 		var label := base if count == 1 else "%s x%d" % [base, count]
 		performed.append(label)
 		trick_completed.emit(label)

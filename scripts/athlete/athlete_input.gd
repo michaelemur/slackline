@@ -15,8 +15,29 @@ var arm_left: float = 0.0        # 0..1 raise left arm
 var arm_right: float = 0.0       # 0..1 raise right arm
 var leg_lift: float = 0.0        # on the line: hold F = balance on one leg
 var grab: String = ""            # in the air: grab held ("" = none)
-var flip_axis: float = 0.0       # -1 backflip, +1 frontflip; held torque
-var twist_axis: float = 0.0      # -1 left, +1 right; held torque
+var flip_axis: float = 0.0       # legacy/test only: held in-air torque
+var twist_axis: float = 0.0      # legacy/test only: held in-air torque
+
+## --- Two-zone control intents (Flip Master-inspired) ---------------------
+## RIGHT hand: one touch-and-hold. On the line: hold = load (sink), release =
+## drive. In the air: hold = tuck, release = open/straight. While holding, the
+## drag direction is the AIM: y > 0 lean back (backflip), y < 0 lean forward
+## (frontflip), x = twist direction. The aim only matters during the push: the
+## lean of the body at takeoff is what makes the rotation.
+var hold: bool = false
+var aim: Vector2 = Vector2.ZERO
+## LEFT hand: balance stick. x = weight shift left/right (on the line and in
+## the air); y = walk along the line (on feet) / small attitude correction of
+## the arms and hips in the air (no new angular momentum).
+var stick: Vector2 = Vector2.ZERO
+var grab_held: bool = false      # independent of tuck/straight
+
+var touch_aim: Vector2 = Vector2.ZERO
+var touch_hold: bool = false
+var touch_stick: Vector2 = Vector2.ZERO
+var touch_grab: bool = false
+var override_aim: Vector2 = Vector2.ZERO
+var override_stick_y: float = 0.0
 
 ## Touch controls feed these alongside keyboard input. Axes are combined and
 ## clamped so a touch player can still use a keyboard during desktop testing.
@@ -88,30 +109,41 @@ func poll() -> void:
 		tuck = 1.0 if override_pump else 0.0
 		if override_tuck >= 0.0:
 			tuck = clampf(override_tuck, 0.0, 1.0)
+		hold = pump_held
+		aim = override_aim.limit_length(1.0)
+		stick = Vector2(balance_axis, override_stick_y)
+		grab_held = grab != ""
 	else:
-		move_axis = clampf(Input.get_axis("move_back", "move_forward") + touch_move_axis, -1.0, 1.0)
-		balance_axis = clampf(Input.get_axis("balance_left", "balance_right") + touch_balance_axis, -1.0, 1.0)
-		pump_held = Input.is_action_pressed("pump") or touch_pump_held
+		# LEFT: balance stick (A/D weight, W/S walk / air attitude; left stick)
+		stick = Vector2(Input.get_axis("balance_left", "balance_right"),
+			Input.get_axis("move_back", "move_forward")) + touch_stick + Vector2(touch_balance_axis, touch_move_axis)
+		stick = stick.limit_length(1.0)
+		balance_axis = stick.x
+		move_axis = stick.y if absf(stick.y) > 0.25 else 0.0
+		# RIGHT: hold (SPACE / A button / touch) + aim (arrows, J/K/H/L, right stick)
+		hold = Input.is_action_pressed("pump") or touch_pump_held or touch_hold
+		aim = Vector2(Input.get_axis("aim_twist_left", "aim_twist_right"),
+			Input.get_axis("aim_front", "aim_back")) + touch_aim
+		aim = aim.limit_length(1.0)
+		pump_held = hold
 		knees = 1.0 if Input.is_action_pressed("knees") else 0.0
-		tuck = 1.0 if pump_held or Input.is_action_pressed("body_tuck") else 0.0
-		flip_axis = clampf(Input.get_axis("flip_back", "flip_front") + touch_flip_axis, -1.0, 1.0)
-		twist_axis = clampf(Input.get_axis("twist_left", "twist_right") + touch_twist_axis, -1.0, 1.0)
+		tuck = 1.0 if hold or Input.is_action_pressed("body_tuck") else 0.0
+		# legacy in-air torque is no longer on the default controls
+		flip_axis = clampf(touch_flip_axis, -1.0, 1.0)
+		twist_axis = clampf(touch_twist_axis, -1.0, 1.0)
 		arm_left = 1.0 if Input.is_action_pressed("arm_left") else 0.0
 		arm_right = 1.0 if Input.is_action_pressed("arm_right") else 0.0
-		leg_lift = 1.0 if Input.is_action_pressed("grab_tuck") else 0.0
-		grab = ""
+		leg_lift = 1.0 if Input.is_action_pressed("leg_lift") else 0.0
+		grab_held = Input.is_action_pressed("grab") or touch_grab or touch_grab_left or touch_grab_right
+		# grabs are independent of the body shape: the same grab button holds
+		# the knees when tucked, the shins/legs when straight
+		grab = ("both_knees" if tuck > 0.5 else "leg") if grab_held else ""
 		for action in GRAB_ACTIONS:
-			if Input.is_action_pressed(action):
+			if InputMap.has_action(action) and Input.is_action_pressed(action):
 				grab = GRAB_ACTIONS[action]
-		if touch_grab_left and touch_grab_right:
-			grab = "both_knees"
-		elif touch_grab_left:
-			grab = "left_knee"
-		elif touch_grab_right:
-			grab = "knee"
 		trick = ""
 		for action in TRICK_ACTIONS:
-			if Input.is_action_just_pressed(action):
+			if InputMap.has_action(action) and Input.is_action_just_pressed(action):
 				trick = TRICK_ACTIONS[action]
 		if touch_trick != "":
 			trick = touch_trick
