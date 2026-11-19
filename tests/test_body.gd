@@ -97,19 +97,27 @@ func test_chest_bounce_asymmetric() -> void:
 	var v := _visual()
 	v.character.contact_target = 0.0
 	v.character.contact = 0.0
-	_settle(v, {"state": 0, "pose": "chest", "pose_b": 1.0, "line_pt": Vector3(-0.01, 0.03, -0.38)}, "chest", 1.0)
-	# As in the reference photos: both hands grip the line under the chest,
-	# both legs hang off to the right side, right leg long, left bent.
-	var lp := Vector3(-0.01, 0.03, -0.38)
-	for side in ["l", "r"]:
-		var d := _b(v, "hand_" + side).distance_to(lp + (Vector3.ZERO if side == "l" else Vector3(0.02, 0.0, 0.13)))
-		check(d < 0.25, "%s hand on the line under the chest (%.2f m)" % [side, d])
-	check(_b(v, "foot_r").x > 0.25 and _b(v, "foot_l").x > 0.05, "both legs off to the right (feet %.2f / %.2f m)" % [_b(v, "foot_r").x, _b(v, "foot_l").x])
-	check(_b(v, "foot_r").y < _b(v, "pelvis").y, "legs hang down from the hips")
+	var lp := Vector3(-0.02, 0.03, -0.62)
+	_settle(v, {"state": 0, "pose": "chest", "pose_b": 1.0, "line_pt": lp}, "chest", 1.0)
+	# Brief (Nov 18): left hand grips the line near the head, right hand free,
+	# left leg extended, right leg bent, the chest resting ON the line.
+	var dl := _b(v, "hand_l").distance_to(lp)
+	check(dl < 0.2, "left hand on the line beside the head (%.2f m)" % dl)
+	check(_b(v, "hand_r").distance_to(lp) > 0.35, "right hand free")
 	var bend_l := (_b(v, "calf_l") - _b(v, "thigh_l")).angle_to(_b(v, "foot_l") - _b(v, "calf_l"))
 	var bend_r := (_b(v, "calf_r") - _b(v, "thigh_r")).angle_to(_b(v, "foot_r") - _b(v, "calf_r"))
-	check(bend_l > bend_r + 0.6, "left knee bent (%.0f deg), right leg long (%.0f deg)" % [rad_to_deg(bend_l), rad_to_deg(bend_r)])
+	check(bend_r > bend_l + 0.6, "right knee bent (%.0f deg), left leg long (%.0f deg)" % [rad_to_deg(bend_r), rad_to_deg(bend_l)])
+	check(_b(v, "spine_03").y > 0.05 and _b(v, "pelvis").y > 0.0, "chest and hips rest on top of the line (%.2f / %.2f m)" % [_b(v, "spine_03").y, _b(v, "pelvis").y])
 	v.free()
+
+
+func test_lying_positions_do_not_pin_the_feet_to_the_line() -> void:
+	for pose in ["chest", "back"]:
+		var v := _visual()
+		_settle(v, {"state": 0, "pose": pose, "pose_b": 1.0, "line_pt": Vector3(-0.02, 0.03, -0.62)}, pose, 1.0)
+		var feet_on_line := _b(v, "foot_l").length() < 0.15 and _b(v, "foot_r").length() < 0.15
+		check(not feet_on_line, "%s: feet are not folded back onto the contact point" % pose)
+		v.free()
 
 
 func test_grab_hands_reach_the_knees() -> void:

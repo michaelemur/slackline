@@ -18,6 +18,48 @@ enum State { ON_LINE, AIRBORNE, FALLEN }
 
 const ReboundMeterScript := preload("res://scripts/athlete/rebound_meter.gd")
 
+## --- Arcade tuning (menu: Line Explosiveness) + combo power ------------
+## push scales the leg drive, air_g the gravity in flight. Clean trick
+## landings raise the POWER level (+12 % leg drive each, up to 5); a bail,
+## a fall or a saved landing drops it back to zero.
+signal power_changed(level: int)
+var arcade_push: float = 1.0
+var arcade_air_g: float = 1.0
+var power_level: int = 0
+const POWER_MAX := 5
+const POWER_STEP := 0.12
+var _base_f_max: float = -1.0
+var _base_v_max: float = -1.0
+
+
+func apply_arcade(push: float, air_g: float) -> void:
+	arcade_push = push
+	arcade_air_g = air_g
+	gravity_scale = air_g
+	tricks.air_gravity = 9.81 * air_g
+
+
+func power_multiplier() -> float:
+	return arcade_push * (1.0 + POWER_STEP * power_level)
+
+
+func set_power(level: int) -> void:
+	level = clampi(level, 0, POWER_MAX)
+	if level != power_level:
+		power_level = level
+		power_changed.emit(level)
+
+
+func _update_arcade_drive() -> void:
+	if _base_f_max < 0.0:
+		_base_f_max = leg.f_max
+		_base_v_max = leg.v_max
+	var m := power_multiplier()
+	leg.f_max = _base_f_max * m
+	leg.v_max = _base_v_max * sqrt(m)
+	line.solver.arcade_contact = state == State.ON_LINE and leg.force > 150.0
+
+
 ## --- Sticky bounce (butt bounce with both hands gripping the line) -----
 ## Hold GRAB while sitting in a butt bounce: both hands close on the line and
 ## the body stays attached (no takeoff). SPACE hold = pull in / compress,
@@ -278,6 +320,7 @@ func pre_line_step(dt: float) -> void:
 	pump = 1.0 if input.pump_held else 0.0
 	leg.body_mass = athlete_mass
 	leg.gravity = line.solver.gravity
+	_update_arcade_drive()
 	if state == State.ON_LINE:
 		if pose == "":
 			var line_len := line.chord_length()
@@ -343,6 +386,7 @@ func _on_tricks_landed(names: Array, points: int) -> void:
 	var gain := 0.18 + minf(float(points) / 10000.0, 0.35) + 0.04 * maxf(0.0, names.size() - 1.0)
 	rebound_meter.earn(gain)
 	_energy_awarded_this_landing = true
+	set_power(power_level + 1)
 
 
 ## Steps the line; while standing on it, the leg exchanges forces with the
@@ -432,7 +476,7 @@ func post_line_step(dt: float) -> void:
 		"arm_swing": arm_swing,
 		"land_pt": _land_point, "land_w": _land_w,
 		# point on the line under the left shoulder (chest bounce hand)
-		"line_pt": Vector3(-0.01, 0.03, -0.38),
+		"line_pt": Vector3(-0.02, 0.03, -0.62),
 		"sticky": sticky,
 	}, dt)
 	if state != State.FALLEN:
@@ -528,6 +572,7 @@ func _update_airborne(dt: float) -> void:
 					if tricks.last_outcome != "clean":
 						# Saved on chest/back after over/under-rotating: not under
 						# control, so the balance takes a hit you have to correct.
+						set_power(power_level - 2)
 						balance.grace = 0.0
 						balance.omega += rng.randf_range(0.8, 1.5) * (1.0 if rng.randf() < 0.5 else -1.0)
 				else:
@@ -630,6 +675,12 @@ func launch(v: Vector3) -> void:
 		tricks.hop = false
 	if not tricks.hop and tricks.active == "" and tricks.queued == "":
 		_set_takeoff_rotation(v.y, contact_source)
+		# A plain push out of a butt/chest/back bounce (no flip) recovers to the
+		# feet by default; with a flip, the takeoff position stays the default
+		# landing. A position button pressed by the player always wins.
+		if contact_source != "" and not _landing_pose_explicit and absf(tricks.l_pitch - tricks.l_set) < 8.0:
+			tricks.queued_pose = ""
+			tricks.set_landing("")
 	_prev_air_dy = 1.0
 	last_landing_failure_reason = ""
 	_record_contact_event("takeoff from " + (contact_source if contact_source != "" else "feet"))
@@ -713,6 +764,7 @@ func land(at_s: float, lateral_offset: float) -> void:
 func fall(reason: String = "unspecified") -> void:
 	if state == State.FALLEN:
 		return
+	set_power(0)
 	last_landing_failure_reason = reason
 	_record_contact_event("fall: " + reason)
 	var b := _line_basis() * Basis(Vector3(0, 0, -1), balance.theta) * Basis(Vector3.RIGHT, -balance.phi)
@@ -840,7 +892,7 @@ func _update_landing_prediction() -> void:
 	var lp := line.sample_world(s_now)
 	var h := global_position.y - lp.y
 	var vy := linear_velocity.y
-	var g := line.solver.gravity
+	var g := tricks.air_gravity
 	var ttc := (vy + sqrt(maxf(0.0, vy * vy + 2.0 * g * maxf(h, 0.0)))) / g
 	_land_point = lp
 	_land_w = clampf(1.0 - ttc / 0.45, 0.0, 1.0)

@@ -8,12 +8,16 @@
 
 config_version=5
 
+[autoload]
+
+GameSettings="*res://scripts/core/game_settings.gd"
+
 [application]
 
 config/name="SLACKLINE"
-config/description="3D mobile slackline game - MVP 0.1"
-config/version="0.1.0"
-run/main_scene="res://scenes/main.tscn"
+config/description="Arcade trickline game for iPhone"
+config/version="0.2.0"
+run/main_scene="res://scenes/menu.tscn"
 config/features=PackedStringArray("4.7", "Mobile")
 
 [display]
@@ -22,6 +26,7 @@ window/size/viewport_width=1280
 window/size/viewport_height=720
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+window/handheld/orientation=4
 
 [physics]
 

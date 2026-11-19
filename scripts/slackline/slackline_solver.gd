@@ -147,10 +147,25 @@ func compute_tension() -> float:
 
 
 var _ck: float = 0.0
+## Set by the athlete while it is loading the line (arcade explosiveness acts
+## only during an athlete contact, so a free line can never pump itself up).
+var arcade_contact: bool = false
+var _prev_length: float = -1.0
+var stretch_rate: float = 0.0
 
 
 func step(dt: float) -> void:
 	compute_tension()
+	if _prev_length > 0.0 and dt > 0.0:
+		stretch_rate = (current_length - _prev_length) / dt
+	_prev_length = current_length
+	if arcade_contact and (params.arcade_kick > 0.0 or params.arcade_soften > 0.0):
+		var extra := maxf(0.0, tension - params.pretension)
+		var up := clampf(-stretch_rate / 0.25, 0.0, 1.0)     # line springing back
+		var down := clampf(stretch_rate / 0.25, 0.0, 1.0)    # line being loaded
+		var fade := clampf(1.0 - extra / maxf(params.arcade_tension_cap, 1.0), 0.0, 1.0)
+		tension = params.pretension + extra * (1.0 + params.arcade_kick * fade * up - params.arcade_soften * fade * down) \
+			if tension > params.pretension else tension
 	var kk := tension / h
 	var th := theta
 	var r := maxf(0.0, (tension - params.pretension) / maxf(params.pretension, 1.0) - params.hysteresis_start)

@@ -15,6 +15,9 @@ extends Node3D
 ## from the gameplay systems.
 
 const SCENE_PATH := "res://assets/athlete/athlete.glb"
+const FEMALE_SCENE_PATH := "res://assets/athlete_female/athlete_female.glb"
+## Chosen in the main menu before the game scene is built.
+static var selected_scene: String = SCENE_PATH
 
 var visual: Node3D            # AthleteVisual (pose rig owner)
 var skel: Skeleton3D
@@ -62,9 +65,10 @@ var _seg_ext := {}                   # bone -> local end offset for "" segments
 
 func setup(pose_rig: Node3D, ref_nodes: Dictionary) -> bool:
 	visual = pose_rig
-	if not ResourceLoader.exists(SCENE_PATH):
+	var path := selected_scene if ResourceLoader.exists(selected_scene) else SCENE_PATH
+	if not ResourceLoader.exists(path):
 		return false
-	var scene: PackedScene = load(SCENE_PATH)
+	var scene: PackedScene = load(path)
 	if scene == null:
 		return false
 	var inst := scene.instantiate()

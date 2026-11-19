@@ -285,10 +285,10 @@ func set_line_pose(pose_name: String, b: float, low: float = 0.0, tilt_scale: fl
 			legs = 1.45
 			shin = lerpf(-1.35, -0.15, clampf(low, 0.0, 1.0))
 		"chest":
-			drop = 0.85
+			drop = CHEST_DROP
 			tilt = -PI * 0.5   # face down, head toward travel direction
 		"back":
-			drop = 0.85
+			drop = BACK_DROP
 			tilt = PI * 0.5    # on the back, looking at the sky
 	_pose.position = Vector3(0, -drop * e, 0)
 	# Chest bounce: the body lies a bit diagonal across the line (legs swung
@@ -377,21 +377,21 @@ func apply_body(ctx: Dictionary, dt: float) -> void:
 		sx -= 0.75 * sw
 		# bounce positions (blended with the position blend e)
 		if pose == "chest":
-			# As in the reference photos: chest on the line, both legs off to
-			# the right and hanging down; right leg long, left leg bent.
-			if side == "r":
-				tx = lerpf(tx, 0.55, e)
-				tz = lerpf(tz, out * 0.5, e)
-				sx = lerpf(sx, -0.15, e)
+			# Chest bounce: chest on the line, LEFT leg long and reaching back
+			# along the line, RIGHT knee bent with the foot hanging off it.
+			if side == "l":
+				tx = lerpf(tx, 0.2, e)
+				tz = lerpf(tz, out * 0.12, e)
+				sx = lerpf(sx, -0.08, e)
 			else:
-				tx = lerpf(tx, 0.8, e)
-				tz = lerpf(tz, -out * 0.35, e)
-				sx = lerpf(sx, -1.45, e)
+				tx = lerpf(tx, 0.85, e)
+				tz = lerpf(tz, out * 0.3, e)
+				sx = lerpf(sx, -1.5, e)
 		elif pose == "back":
 			# legs ~45 deg above horizontal, slightly open V, knees soft
 			tx = lerpf(tx, BACK_HIP, e)
-			tz = lerpf(tz, out * 0.2, e)
-			sx = lerpf(sx, -0.25, e)
+			tz = lerpf(tz, out * 0.3, e)
+			sx = lerpf(sx, -0.3, e)
 		# Reaching for the line before a feet landing: each leg aims at the
 		# predicted contact point (diagonal when it's off to the side or far,
 		# vertical right above it); feet stay pointed, so toes touch first.
@@ -440,19 +440,27 @@ func apply_body(ctx: Dictionary, dt: float) -> void:
 		var ax := flex * 0.8 + 0.3 * sin(gait) * walk * (-1.0 if side == "l" else 1.0)
 		ax = lerpf(ax, swing, swing_w * clampf(absf(swing - 0.4) / 0.6, 0.0, 1.0))
 		if pose == "chest":
-			# both hands under the chest on the line
-			az = lerpf(az, 0.3 * (-1.0 if side == "l" else 1.0), e)
-			ax = lerpf(ax, 1.25, e)
+			if side == "l":
+				# left hand reaches ahead and grips the line beside the head
+				az = lerpf(az, -0.25, e)
+				ax = lerpf(ax, 2.3, e)
+			else:
+				# right arm free, hanging loose off the line for balance
+				az = lerpf(az, 0.55, e)
+				ax = lerpf(ax, 0.35, e)
 		elif pose == "back":
-			az = lerpf(az, 0.95 * (-1.0 if side == "l" else 1.0), e)
-			ax = lerpf(ax, 0.55, e)
+			# arms spread out to the sides, a little toward the ground
+			az = lerpf(az, 1.25 * (-1.0 if side == "l" else 1.0), e)
+			ax = lerpf(ax, -0.25, e)
 		arm.rotation.x = _spring("ax_" + side, "arm", ax, dt, "arm_x")
 		arm.rotation.z = _spring("az_" + side, "arm", az, dt, "arm_z")
 		# elbows: relaxed bend, more when the arm is raised; they lag (loose)
 		var elev := absf(arm.rotation.z)
 		var el := 0.35 + 0.45 * clampf((elev - 0.8) / 1.6, 0.0, 1.0) + 0.25 * absf(ax)
 		if pose == "chest":
-			el = lerpf(el, 1.0, e)
+			el = lerpf(el, 0.45 if side == "l" else 0.25, e)
+		elif pose == "back":
+			el = lerpf(el, 0.2, e)
 		_elbow[side] = _spring("el_" + side, "elbow", el, dt, "elbow")
 	if character != null:
 		character.elbow_cmd = _elbow
@@ -462,6 +470,10 @@ func apply_body(ctx: Dictionary, dt: float) -> void:
 			var lift: float = tgt[side]
 			var sw := maxf(0.0, sin(gait) * (1.0 if side == "l" else -1.0)) * walk
 			character.foot_contact[side] = clampf(1.0 - maxf(lift * 1.4, sw * 1.6), 0.0, 1.0)
+			# lying or sitting on the line: the feet are free (pinning them to the
+			# contact point folded both legs back onto the line)
+			if pose != "":
+				character.foot_contact[side] *= 1.0 - e
 			character.foot_offset[side] = Vector3(0, 0, -0.13 * cos(gait) * walk * (1.0 if side == "l" else -1.0))
 		# hands: grabs reach for the legs; chest bounce: same-side hand to the line
 		character.hand_goal["l"] = []
@@ -476,16 +488,20 @@ func apply_body(ctx: Dictionary, dt: float) -> void:
 			character.hand_goal["l"] = ["point", Vector3(-0.03, 0.03, -0.14), 1.0]
 			character.hand_goal["r"] = ["point", Vector3(0.03, 0.03, -0.30), 1.0]
 		elif pose == "chest" and e > 0.3:
+			# left hand only, on the line ahead of the shoulder (beside the head)
 			var lp: Vector3 = ctx.get("line_pt", Vector3.ZERO)
-			character.hand_goal["l"] = ["point", lp, e * 0.9]
-			character.hand_goal["r"] = ["point", lp + Vector3(0.02, 0.0, 0.13), e * 0.9]
+			character.hand_goal["l"] = ["point", lp, e]
 
 
 var _elbow := {"l": 0.4, "r": 0.4}
 ## Back bounce hip flexion: torso ~25 deg above horizontal, legs 45 deg above
 ## horizontal -> hip flexion = 180 - 25 - 45... measured on the rig (see test).
-const BACK_HIP := 1.31
-const CHEST_DIAGONAL := 0.15   # rad the body lies across the line in a chest bounce
+const BACK_HIP := 0.70
+const CHEST_DIAGONAL := 0.15
+## How far the body drops into a lying position: the chest/back rests ON the
+## line (body half-thickness above it), not around it.
+const CHEST_DROP := 0.72
+const BACK_DROP := 0.74   # rad the body lies across the line in a chest bounce
 
 
 ## Leg shape for a grab: Vector3(hip flexion, knee (negative), abduction).

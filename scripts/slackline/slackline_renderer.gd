@@ -66,3 +66,12 @@ func _quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, n: Vector3) -> void:
 	for v in [a, b, c, a, c, d]:
 		_imesh.surface_set_normal(n)
 		_imesh.surface_add_vertex(v)
+
+
+## 0..1: the webbing glows hotter as the athlete's POWER builds.
+func set_glow(amount: float) -> void:
+	if params == null:
+		return
+	var hot := Color(1.0, 0.75, 0.2)
+	_mat.emission_enabled = true
+	_mat.emission = (params.color * 0.45).lerp(hot * 2.2, clampf(amount, 0.0, 1.0))

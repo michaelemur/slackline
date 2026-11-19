@@ -17,6 +17,7 @@ var demo := DemoPilot.new()
 
 func _ready() -> void:
 	InputSetup.ensure_actions()
+	_apply_session_settings()
 	_build_environment()
 	athlete.attach(line)
 	athlete.reset_to_line(line.chord_length() * 0.5)
@@ -95,8 +96,21 @@ func _unhandled_input(event: InputEvent) -> void:
 		load_preset(LabPanel.PRESETS["Standard"])
 
 
+## Height, explosiveness, line length and athlete chosen in the main menu.
+func _apply_session_settings() -> void:
+	if GameSettings.from_menu or DisplayServer.get_name() != "headless":
+		var path: String = LabPanel.PRESETS.get(GameSettings.line_length, LabPanel.PRESETS["Trickline 15m"])
+		line.apply_preset(GameSettings.apply_to_params(load(path)))
+	var p: Dictionary = GameSettings.preset()
+	athlete.apply_arcade(p["push"], p["air_g"])
+	audio_director.music_enabled = GameSettings.music_on
+
+
 func load_preset(path: String) -> void:
-	line.apply_preset(load(path) as SlacklineParams)
+	var params := load(path) as SlacklineParams
+	if GameSettings.explosiveness != "soft" or GameSettings.from_menu:
+		params = GameSettings.apply_to_params(params)
+	line.apply_preset(params)
 	athlete.reset_to_line(line.chord_length() * 0.5)
 	camera_rig.snap()
 	lab.bind(line, athlete)

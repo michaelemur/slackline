@@ -86,6 +86,7 @@ func _process(_delta: float) -> void:
 	var demo_tag := "   DEMO: %s" % (demo_mode_fn.call() if demo_mode_fn.is_valid() else "") if demo_enabled_fn.is_valid() and demo_enabled_fn.call() else ""
 	_hud.text = "SLACKLINE  [%s]%s\nSCORE  %d\nBEST COMBO  x%d" % [line.params.preset_name, demo_tag,
 		athlete.tricks.score, athlete.tricks.best_combo]
+	_update_power_and_height(_delta)
 	if _panel.visible:
 		_diagnostics.text = ("State: %s   Jumps: %d   Landings: %d\n" % [athlete.state_name(), athlete.jumps, athlete.landings]
 			+ "Tension: %.2f kN   Sag @ feet: %.2f m   Max sag: %.2f m\n" % [sv.tension / 1000.0, contact_sag, sv.max_sag()]
@@ -134,6 +135,61 @@ func _process(_delta: float) -> void:
 		_rebuild_pending = false
 		line.build()
 		athlete.reset_to_line(line.chord_length() * 0.5)
+
+
+var _power_label: Label
+var _height_label: Label
+var _power_pop: float = 0.0
+var _last_power: int = 0
+var _air_best: float = 0.0
+
+
+## Arcade feedback: POWER pips (clean tricks charge the leg drive), the live
+## height during big jumps, and the line glowing as power builds.
+func _update_power_and_height(dt: float) -> void:
+	if _power_label == null:
+		_power_label = Label.new()
+		_power_label.add_theme_font_size_override("font_size", 30)
+		_power_label.add_theme_color_override("font_outline_color", Color(0.2, 0.05, 0.0))
+		_power_label.add_theme_constant_override("outline_size", 8)
+		_power_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+		_power_label.position = Vector2(-150, 14)
+		_power_label.custom_minimum_size = Vector2(300, 40)
+		_power_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		add_child(_power_label)
+		_height_label = Label.new()
+		_height_label.add_theme_font_size_override("font_size", 46)
+		_height_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
+		_height_label.add_theme_constant_override("outline_size", 10)
+		_height_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+		_height_label.position = Vector2(-150, 58)
+		_height_label.custom_minimum_size = Vector2(300, 60)
+		_height_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		add_child(_height_label)
+	var lvl: int = athlete.power_level
+	if lvl > _last_power:
+		_power_pop = 1.0
+	_last_power = lvl
+	_power_pop = maxf(0.0, _power_pop - dt * 2.0)
+	var pips := ""
+	for i in Athlete.POWER_MAX:
+		pips += "●" if i < lvl else "○"
+	_power_label.text = "POWER  " + pips + ("  MAX!" if lvl >= Athlete.POWER_MAX else "")
+	var hot := float(lvl) / Athlete.POWER_MAX
+	_power_label.add_theme_color_override("font_color", Color(1.0, 0.85 - 0.45 * hot, 0.3 - 0.2 * hot))
+	_power_label.scale = Vector2.ONE * (1.0 + 0.35 * _power_pop)
+	_power_label.pivot_offset = _power_label.size * 0.5
+	if line.renderer != null and line.renderer.has_method("set_glow"):
+		line.renderer.set_glow(hot)
+	if athlete.state == Athlete.State.AIRBORNE:
+		var h: float = athlete.global_position.y - line.sample_world(clampf(athlete.s, 0.0, line.chord_length())).y
+		_air_best = maxf(_air_best, h)
+		_height_label.visible = _air_best > 1.5
+		_height_label.text = "%.1f m" % _air_best
+		_height_label.add_theme_color_override("font_color", Color(1, 1, 1) if _air_best < 4.0 else Color(1.0, 0.75, 0.25))
+	else:
+		_air_best = 0.0
+		_height_label.visible = false
 
 
 func _build_hud() -> void:
@@ -283,6 +339,13 @@ func _build_pause_overlay() -> void:
 	restart.text = "Restart line"
 	restart.pressed.connect(func(): restart_requested.emit())
 	layout.add_child(restart)
+	var menu := Button.new()
+	menu.text = "Main menu"
+	menu.pressed.connect(func():
+		get_tree().paused = false
+		Engine.time_scale = 1.0
+		get_tree().change_scene_to_file("res://scenes/menu.tscn"))
+	layout.add_child(menu)
 	var help := Button.new()
 	help.text = "Controls"
 	help.pressed.connect(func():

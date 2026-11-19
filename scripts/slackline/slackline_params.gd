@@ -10,7 +10,7 @@ extends Resource
 ## Anchor-to-anchor distance in metres.
 @export_range(4.0, 60.0, 0.5) var length: float = 15.0
 ## Height of both anchors above the ground, metres.
-@export_range(0.5, 4.0, 0.05) var anchor_height: float = 2.0
+@export_range(0.5, 12.0, 0.05) var anchor_height: float = 2.0
 ## Number of simulated segments (nodes = segments + 1).
 @export_range(8, 128, 1) var segments: int = 48
 
@@ -35,6 +35,17 @@ extends Resource
 @export_range(0.0, 2000.0, 0.5) var hysteresis_gain: float = 0.0
 ## r below which there is no extra loss (pumping loads stay springy).
 @export_range(0.0, 3.0, 0.05) var hysteresis_start: float = 0.0
+
+@export_group("Arcade explosiveness")
+## Gameplay exaggeration (not real webbing): while an athlete is loading the
+## line, the extra tension (above pretension) is reduced as the line stretches
+## (a slower, deeper compression) and increased as it springs back (a fast,
+## powerful release). 0/0 = physical webbing.
+@export_range(0.0, 2.0, 0.01) var arcade_kick: float = 0.0
+@export_range(0.0, 0.8, 0.01) var arcade_soften: float = 0.0
+## The kick fades out as the extra tension approaches this value, so the
+## bounce grows to a preset-dependent maximum instead of without limit.
+@export_range(1000.0, 200000.0, 500.0) var arcade_tension_cap: float = 20000.0
 
 @export_group("Solver")
 ## Solver substeps per physics tick.

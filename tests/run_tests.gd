@@ -22,7 +22,7 @@ const UNIT_SUITES := [
 ]
 const SMOKE := "res://tests/test_gameplay_smoke.gd"
 ## Further scene scenarios, run one after another after the smoke test.
-const SCENARIOS := ["res://tests/test_sticky_bounce.gd"]
+const SCENARIOS := ["res://tests/test_sticky_bounce.gd", "res://tests/test_arcade_menu.gd"]
 var _scenario_i := -1
 
 var _total_pass := 0

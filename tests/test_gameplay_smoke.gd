@@ -128,8 +128,10 @@ func _physics_process(delta: float) -> void:
 	t += delta
 	if _contact_expected != "" and athlete.jumps > _contact_jumps_before and not _contact_target_recorded:
 		_contact_target_recorded = true
-		_check(athlete.state == Athlete.State.AIRBORNE and athlete.tricks.queued_pose == _contact_expected,
-			"%s takeoff defaults to a %s landing target" % [_contact_expected, _contact_expected])
+		# a plain push out of a position (no flip) recovers to the feet; a flip
+		# keeps the takeoff position as the default landing (see test_tricks)
+		_check(athlete.state == Athlete.State.AIRBORNE and athlete.tricks.queued_pose == "",
+			"%s plain push-out recovers to a feet landing" % _contact_expected)
 	# Balance is a player skill now: correct like a player would (on what
 	# the body felt ~150 ms ago), unless a check sets the lean on purpose.
 	if not main.demo.enabled:

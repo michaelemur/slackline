@@ -221,6 +221,7 @@ func on_launch(v_up: float, from_pose: String = "", from_angle: float = 0.0) -> 
 ## Rotation set by the body at takeoff (two-zone controls): the player's
 ## lean decides the angular momentum; no assist steers it afterwards.
 var _attitude_used: float = 0.0
+var air_gravity: float = 9.81     # gravity in flight (arcade settings lower it)
 
 
 func launch_spin(lp: float, lt: float) -> void:
@@ -246,7 +247,7 @@ func adjust_attitude(dt: float, rate: float, limit: float) -> void:
 func flight_time_for(pose_id: String) -> float:
 	var drop := launch_drop + (pose_drop if pose_id != "" and pose_id != "feet" else 0.0)
 	var v := maxf(v_launch, 0.5)
-	return maxf(0.3, (v + sqrt(maxf(0.0, v * v + 2.0 * 9.81 * drop))) / 9.81)
+	return maxf(0.3, (v + sqrt(maxf(0.0, v * v + 2.0 * air_gravity * drop))) / air_gravity)
 
 
 func set_landing(pose_id: String) -> bool:
