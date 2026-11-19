@@ -15,22 +15,32 @@ No tricks, mobile touch controls or final art yet. See `docs/ROADMAP.md`.
 1. Open Godot 4.7.2 → **Import** → choose this folder's `project.godot`.
 2. Press **F5** (main scene: `scenes/main.tscn`).
 
+**Simple controls: right hand = power, left hand = position.**
+
 | Key | Action |
 |---|---|
-| W / S | Walk along the line |
-| A / D | Hips (balance strategy) |
-| Q / E | Raise left / right arm (each arm is simulated) |
-| Shift | Bend knees (lower centre of mass) |
-| Space hold / release | Squat (load) / drive the legs (push). Hold while the line is HIGH, release while it is LOW — the on-screen rhythm cue tells you. Takeoff happens physically. |
-| J K L H | SET a backflip / frontflip / 360 / 180 on the line (or while bouncing in a butt/chest bounce); it launches as angular momentum at takeoff (L = I·ω) |
-| SPACE in the air | Tuck (3× faster rotation); release to open and slow down. Time it: too long over-rotates, too short under-rotates; small misses are saved on chest/back, big ones bail |
-| W at takeoff | Lean forward: jump along the line |
-| Z X C | Butt / Chest / Back bounce. On the line: drop into it. In the air (or while bouncing in one): choose your next landing — press nothing to land on your feet, press Z/X/C again to chain (x2, x3 … combo). Out of the position you drive back up with your legs on the line's recoil (automatic, or time it with SPACE). |
+| **Space** hold / release | RIGHT HAND, power. Pump the line in every position: hold = sink into it, release = drive off it. Power: feet 100 %, butt 90 %, chest 80 %, back 50 %. In the air: hold = tuck, release = open out. |
+| **V / Z / X / C** | LEFT HAND, position: feet / butt / chest / back. On the line: drop into it. In a jump: choose the landing; locked close to touchdown it steers him onto it (a last-moment lock is a PERFECT LOCK, +25 %). With no choice he lands in whatever position he's closest to. Menu setting **Landing lock: HARDCORE** makes an unlocked jump a fail. |
+| Arrows or J K H L | On the line: aim the takeoff lean. **In the air: free rotation**: up = backflip, down = frontflip, left/right = twist. Start, stop, reverse at any time; pushing against the spin brakes it fast. |
+| F, B, N, P / U, I, O | Air grabs (F grab, B double knee, N knee, P cross) and leg shapes (U pike, I straddle, O split), held any time, combined with any rotation. F in a butt bounce: sticky grip |
+| A / D, W / S | Optional: balance is automatic now; walk along the line |
 | T / M | Demo autopilot / slow motion |
 | G | Show centre of mass (navel) + plumb line |
 | [ ] , mouse wheel | Camera orbit / zoom |
 | R | Reset |  1 / 2 presets | F1 physics panel |
+| F8 | Skinned athlete / capsule body |
 | **F3** | **Rebound Laboratory** (5 line lengths side by side) |
+
+On a phone: the left half is a position pad (push up = FEET, down = BUTT,
+left = BACK, right = CHEST; slide to change), the right half is
+hold-to-pump (in the air: hold = tuck, drag = flip / twist), GRAB / PIKE /
+SPLIT are the small buttons top right.
+
+**Fails:** landing far off any position (upside down, sideways off the line)
+ends in a fail; in HARDCORE also any real jump without a late lock. The fail type is random (weighted by what went wrong):
+over-rotating, under-rotating, feet missing the line, twisted sideways off the
+line (mostly from an out-of-balance butt bounce) or ejected. The body goes
+floppy (ragdoll), then he is back on the line in under ~2 s.
 
 Tricks fire in the air, or press them while bouncing to queue one for the
 next pop-off. Several tricks in one jump multiply the score (x1.5, x2 …).
@@ -50,9 +60,13 @@ godot --headless --path . --import                                   # first tim
 godot --headless --path . --fixed-fps 60 -s res://tests/run_tests.gd # exit code 0 = pass
 ```
 
-96 checks: solver statics vs closed-form, bounce frequency, energy, stability,
+1668 checks: solver statics vs closed-form, bounce frequency, energy, stability,
 balance, tricks, the 10 Rebound-Lab acceptance criteria, and a scripted
-end-to-end run of the real scene. `tests/lab_report.gd` regenerates
+end-to-end run of the real scene, the butt-seat clearance after tricks
+(`test_butt_clearance.gd`), chest/back landing choice (`test_landing_choice.gd`)
+and the landing lock, pumping power and fails (`test_landing_lock.gd`).
+Single suites: `-s res://tests/run_unit.gd -- res://tests/test_x.gd` (unit) or
+`-s res://tests/run_scenario.gd -- res://tests/test_x.gd` (scene scenario). `tests/lab_report.gd` regenerates
 `docs/REBOUND_LAB_RESULTS.md`. See `docs/PHYSICS.md` and `docs/PHASE_STATUS.md`.
 
 Screenshots (needs a display or `xvfb-run`):

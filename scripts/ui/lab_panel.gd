@@ -95,10 +95,19 @@ func _process(_delta: float) -> void:
 			+ "Air: flip %+.0f deg  spin %+.1f rad/s  tuck %d%%  grab %s | velocity %.1f m/s\n" % [rad_to_deg(athlete.tricks.pitch), athlete.tricks.omega_pitch, int(athlete.tricks.tuck * 100.0), athlete.tricks.grab if athlete.tricks.grab != "" else "-", athlete.linear_velocity.length() if athlete.state == 1 else athlete.foot_velocity.length()]
 			+ "Solver: %.2f ms   FPS: %d%s" % [line.last_step_ms, Engine.get_frames_per_second(), "   SLOW-MO" if Engine.time_scale < 0.9 else ""])
 	var tr := athlete.tricks
-	if tr.message_time > 0.0:
+	var lock_open := athlete.require_lock and athlete.state == Athlete.State.AIRBORNE and athlete.needs_lock and not tr.locked \
+		and athlete.land_eta() <= TrickController.LOCK_WINDOW
+	if lock_open:
+		# the left hand's moment: choose where to land, now
+		_trick_label.text = "LOCK YOUR LANDING!  feet / butt / chest / back"
+		_trick_label.modulate.a = 0.55 + 0.45 * absf(sin(Time.get_ticks_msec() * 0.012))
+	elif tr.message_time > 0.0:
 		_trick_label.text = tr.message
 		_trick_label.modulate.a = clampf(tr.message_time / 0.5, 0.0, 1.0)
-	elif athlete.state == Athlete.State.AIRBORNE and tr.queued_pose != "":
+	elif athlete.state == Athlete.State.AIRBORNE and tr.locked:
+		_trick_label.text = "Locked: " + ("Feet" if tr.queued_pose == "" else TrickController.LINE_TRICKS[tr.queued_pose]["name"])
+		_trick_label.modulate.a = 0.85
+	elif athlete.state == Athlete.State.AIRBORNE and tr.queued_pose != "" and not athlete.needs_lock:
 		_trick_label.text = "Landing: " + TrickController.LINE_TRICKS[tr.queued_pose]["name"]
 		_trick_label.modulate.a = 0.85
 	elif athlete.pose != "":
@@ -250,18 +259,20 @@ func _build_hud() -> void:
 	_help_button.pressed.connect(func(): _help_panel.visible = not _help_panel.visible)
 	add_child(_help_button)
 	_help_panel = PanelContainer.new()
-	_help_panel.custom_minimum_size = Vector2(300, 172)
+	_help_panel.custom_minimum_size = Vector2(300, 210)
 	_help_panel.visible = false
 	add_child(_help_panel)
 	var help_text := Label.new()
 	help_text.text = ("CONTROLS\n"
-		+ "RIGHT HAND  hold SPACE = load the line, release = jump\n"
-		+ "   in the air: hold = tuck (spin faster), release = open/straight\n"
-		+ "   aim the takeoff while loading: UP/J backflip, DOWN/K frontflip,\n"
-		+ "   LEFT/RIGHT (H/L) twist.  F = grab (tucked or straight)\n"
-		+ "LEFT HAND  A/D balance, W/S walk (in the air: small attitude fix)\n"
-		+ "Z/X/C butt / chest / back.  STICKY: in a butt bounce hold F to grip,\n"
-		+ "   pump with SPACE (hold as the line drops), let go of F to fly\n"
+		+ "RIGHT HAND = POWER  hold SPACE = sink into the line, release = drive.\n"
+		+ "   Pumps in every position: feet 100%, butt 90%, chest 80%, back 50%.\n"
+		+ "   In the air: hold = tuck (spin faster), release = open out.\n"
+		+ "   Aim while loading: UP/J backflip, DOWN/K frontflip, H/L twist. F = grab\n"
+		+ "LEFT HAND = POSITION  V feet, Z butt, X chest, C back.\n"
+		+ "   On the line: drop into it. In a jump: LOCK the landing late,\n"
+		+ "   close to touchdown (too early does not count, no lock = fail).\n"
+		+ "Balance is automatic (A/D balance, W/S walk if you want them).\n"
+		+ "STICKY: in a butt bounce hold F to grip, pump with SPACE, let go to fly\n"
 		+ "1/3/4 line   N music on/off   R reset   ESC pause")
 	help_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_help_panel.add_child(help_text)

@@ -84,6 +84,7 @@ func _next_run() -> void:
 	_main = load("res://scenes/main.tscn").instantiate()
 	add_child(_main)
 	_a = _main.get_node("Athlete")
+	_a.auto_lock = true   # measures line heights, not the landing-lock control
 	_a.input.override_enabled = true
 	_t = 0.0
 	_best = 0.0

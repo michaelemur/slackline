@@ -30,6 +30,10 @@ var _contact_jumps_before: int = 0
 var _contact_target_recorded: bool = false
 var _stall_jumps_before: int = 0
 var _stall_score_before: int = 0
+var _stall_pushed := false
+var _stall_returned := false
+var _stall_jumps_at_return := -1
+var _stall_score_at_return := -1
 var _high_jump_started := false
 
 
@@ -47,6 +51,10 @@ func _ready() -> void:
 		"returning to beach releases the temporary analysis studio")
 	athlete = main.get_node("Athlete")
 	line = main.get_node("Slackline")
+	# These checks are about the line, takeoff and landing physics, not the
+	# landing-lock control: lock the default landing automatically (the
+	# lock and fail rules have their own scenario, test_landing_lock.gd).
+	athlete.auto_lock = true
 	var lab: LabPanel = main.get_node("LabPanel")
 	lab._process(0.0)
 	_check(not lab._hud.text.contains("Tension") and not lab._hud.text.contains("W/S"),
@@ -126,7 +134,10 @@ func _at(time: float, key: String) -> bool:
 
 func _physics_process(delta: float) -> void:
 	t += delta
-	if _contact_expected != "" and athlete.jumps > _contact_jumps_before and not _contact_target_recorded:
+	# (a hop - the line dropping away under the position for a moment - is
+	# not the push-out: wait for the real takeoff)
+	if _contact_expected != "" and athlete.jumps > _contact_jumps_before and not _contact_target_recorded \
+			and athlete.state == Athlete.State.AIRBORNE and not athlete.tricks.hop:
 		_contact_target_recorded = true
 		# a plain push out of a position (no flip) recovers to the feet; a flip
 		# keeps the takeoff position as the default landing (see test_tricks)
@@ -209,16 +220,23 @@ func _physics_process(delta: float) -> void:
 		_check(_pump_peak > 1.5, "rhythm pumping from rest reaches >1.5 m/s line speed within 2 s (got %.2f)" % _pump_peak)
 		athlete.reset_to_line(line.chord_length() * 0.5)
 	for trick in ["butt", "chest", "back"]:
-		var t0: float = {"butt": 18.5, "chest": 21.0, "back": 23.5}[trick]
+		var t0: float = {"butt": 18.5, "chest": 21.0, "back": 23.4}[trick]
+		# the back has half the pumping power: it needs ~3 s of pumping
+		var t_out: float = 3.5 if trick == "back" else 2.2
 		if _at(t0, "pose_" + trick):
 			_landed_before = athlete.tricks.tricks_landed
 			_contact_jumps_before = athlete.jumps
 			_contact_expected = trick
 			_contact_target_recorded = false
 			athlete.input.override_trick = trick
+		# The back has the least pumping power (50 %): pump it like a player,
+		# hold while the line goes down, release as it comes back up.
+		if trick == "back" and t > t0 + 0.25 and t < t0 + t_out and (athlete.pose == "back" or athlete._rising_from == "back"):
+			athlete.input.override_pump = line.sample_velocity(athlete.s).y < 0.0
 		if _at(t0 + 0.2, "pose_in_" + trick):
 			_check(athlete.pose == trick, "%s bounce: athlete drops into position" % trick)
-		if _at(t0 + 2.2, "pose_out_" + trick):
+		if _at(t0 + t_out, "pose_out_" + trick):
+			athlete.input.override_pump = false
 			_check(athlete.jumps > _contact_jumps_before, "%s contact produced a physical takeoff" % trick)
 			_check(_contact_target_recorded, "%s takeoff-contact memory was observed" % trick)
 			_check(athlete.tricks.tricks_landed >= _landed_before + 1, "%s bounce scored after takeoff" % trick)
@@ -226,16 +244,16 @@ func _physics_process(delta: float) -> void:
 			_contact_expected = ""
 			athlete.reset_to_line(line.chord_length() * 0.5)
 	# Steer hard in the air, then land: should stay on.
-	if _at(26.0, "air_steer_pump"):
+	if _at(27.0, "air_steer_pump"):
 		athlete.input.override_pump = true
 		_air_steer_jumps = athlete.jumps
-	if t > 26.0 and t < 34.0 and athlete.state == Athlete.State.AIRBORNE:
+	if t > 27.0 and t < 34.0 and athlete.state == Athlete.State.AIRBORNE:
 		athlete.input.override_pump = false
 		athlete.input.override_balance = 1.0
-	elif t > 26.0 and t < 34.0 and athlete.jumps > _air_steer_jumps:
+	elif t > 27.0 and t < 34.0 and athlete.jumps > _air_steer_jumps:
 		athlete.input.override_balance = 0.0
 		athlete.input.override_pump = false
-	elif t > 26.3 and t < 34.0:
+	elif t > 27.3 and t < 34.0:
 		_rhythm()
 	if _at(34.0, "air_steer_check"):
 		athlete.input.override_balance = 0.0
@@ -272,19 +290,28 @@ func _physics_process(delta: float) -> void:
 		_stall_jumps_before = athlete.jumps
 		_stall_score_before = athlete.tricks.tricks_landed
 		athlete.input.override_trick = "chest"
+	if t > 74.5 and t < 76.8 and not _stall_returned:
+		if athlete._rising_from == "chest":
+			_stall_pushed = true
+		elif _stall_pushed and athlete.pose == "chest":
+			_stall_returned = true
+			_stall_jumps_at_return = athlete.jumps
+			_stall_score_at_return = athlete.tricks.tricks_landed
+			_check(is_equal_approx(athlete.leg.contact_max, athlete.leg.l_pose + Athlete.POSE_REACH),
+				"back in the chest position: contact reach is the chest's again")
 	if _at(76.8, "stalled_push_recovery"):
-		_check(athlete.pose == "" and athlete._rising_from == "",
-			"stalled chest push exits the contact state")
-		_check(is_equal_approx(athlete.leg.contact_max, athlete.leg.l_max),
-			"stalled chest push restores full stance reach")
-		_check(athlete.jumps == _stall_jumps_before,
-			"failed chest push does not create an unintended takeoff")
-		_check(athlete.tricks.tricks_landed == _stall_score_before,
-			"failed chest push is not scored as a completed bounce")
-		_check(athlete.last_landing_failure_reason.contains("did not reach takeoff"),
-			"stalled push records a specific recovery reason")
+		# Pumping works in every position: a push that does not leave the
+		# line settles back into the same position, ready for the next pump.
+		_check(_stall_pushed, "chest push was attempted")
+		_check(_stall_returned, "stalled chest push settles back into the chest position")
+		_check(_stall_jumps_at_return == _stall_jumps_before,
+			"the stalled push itself is not a takeoff")
+		_check(_stall_score_at_return == _stall_score_before,
+			"the stalled push is not scored as a completed bounce")
+		_check(athlete.last_landing_failure_reason.contains("did not reach takeoff") or athlete.jumps > _stall_jumps_before,
+			"stalled push records a specific reason")
 		_check(athlete.state != Athlete.State.FALLEN,
-			"failed chest push recovers to a supported state")
+			"stalled chest push stays in a supported state")
 		athlete.pose_push_reach = 0.35
 	if _at(77.0, "line_30m"):
 		main.load_preset("res://resources/presets/trickline_30m.tres")

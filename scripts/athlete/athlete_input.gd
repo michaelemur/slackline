@@ -54,6 +54,7 @@ var touch_flip_axis: float = 0.0
 var touch_twist_axis: float = 0.0
 var touch_grab_left: bool = false
 var touch_grab_right: bool = false
+var touch_shape: String = ""      # phone: leg shape button held ("pike" / "split")
 
 const GRAB_ACTIONS := {
 	"grab_both_knees": "both_knees",   # B
@@ -63,6 +64,9 @@ const GRAB_ACTIONS := {
 	"grab_tuck": "tuck",               # F (in the air)
 	"grab_left": "left_knee",
 	"grab_right": "knee",
+	"air_pike": "pike",
+	"air_straddle": "straddle",
+	"air_split": "split",
 }
 
 const TRICK_ACTIONS := {
@@ -73,6 +77,7 @@ const TRICK_ACTIONS := {
 	"trick_backflip360": "backflip360",
 	"trick_frontflip360": "frontflip360",
 	"trick_backflip180": "backflip180",
+	"trick_feet": "feet",
 	"trick_butt": "butt",
 	"trick_chest": "chest",
 	"trick_back": "back",
@@ -148,6 +153,8 @@ func poll() -> void:
 		for action in GRAB_ACTIONS:
 			if InputMap.has_action(action) and Input.is_action_pressed(action):
 				grab = GRAB_ACTIONS[action]
+		if touch_shape != "":
+			grab = touch_shape
 		trick = ""
 		for action in TRICK_ACTIONS:
 			if InputMap.has_action(action) and Input.is_action_just_pressed(action):

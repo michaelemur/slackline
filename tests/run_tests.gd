@@ -9,6 +9,8 @@ const UNIT_SUITES := [
 	"res://tests/test_solver.gd",
 	"res://tests/test_balance.gd",
 	"res://tests/test_tricks.gd",
+	"res://tests/test_landing_choice.gd",
+	"res://tests/test_air_freedom.gd",
 	"res://tests/test_character.gd",
 	"res://tests/test_body.gd",
 	"res://tests/test_rebound_lab.gd",
@@ -22,7 +24,8 @@ const UNIT_SUITES := [
 ]
 const SMOKE := "res://tests/test_gameplay_smoke.gd"
 ## Further scene scenarios, run one after another after the smoke test.
-const SCENARIOS := ["res://tests/test_sticky_bounce.gd", "res://tests/test_arcade_menu.gd"]
+const SCENARIOS := ["res://tests/test_sticky_bounce.gd", "res://tests/test_arcade_menu.gd",
+	"res://tests/test_butt_clearance.gd", "res://tests/test_landing_lock.gd"]
 var _scenario_i := -1
 
 var _total_pass := 0

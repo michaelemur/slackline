@@ -29,6 +29,7 @@ var _explo_buttons := {}
 var _explo_label: Label
 var _length_buttons := {}
 var _music_button: Button
+var _lock_button: Button
 
 
 func _ready() -> void:
@@ -263,6 +264,14 @@ func _build_settings(root: Control) -> void:
 		if a: a.music_enabled = GameSettings.music_on
 		_refresh())
 	v.add_child(_music_button)
+	_lock_button = Button.new()
+	_lock_button.custom_minimum_size = Vector2(200, 56)
+	_lock_button.add_theme_font_size_override("font_size", 22)
+	_lock_button.tooltip_text = "Hardcore: lock every landing late in the jump, or fail"
+	_lock_button.pressed.connect(func():
+		GameSettings.landing_lock = not GameSettings.landing_lock
+		_refresh())
+	v.add_child(_lock_button)
 	var done := _big_button("DONE", Color(0.95, 0.42, 0.12))
 	done.custom_minimum_size = Vector2(200, 64)
 	done.pressed.connect(func():
@@ -288,6 +297,7 @@ func _refresh() -> void:
 	for id in _length_buttons:
 		_length_buttons[id].button_pressed = id == GameSettings.line_length
 	_music_button.text = "Music: " + ("ON" if GameSettings.music_on else "OFF")
+	_lock_button.text = "Landing lock: " + ("HARDCORE" if GameSettings.landing_lock else "EASY")
 	_refresh_summary()
 
 

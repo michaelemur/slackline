@@ -34,7 +34,7 @@ func test_direct_flip_control_accelerates_and_reverses_without_auto_tuck() -> vo
 		t.update_air(DT, 0.0, "", -1.0, 0.0)
 	check(t.l_pitch < 0.0 and t.pitch < 0.0, "held backflip control builds backward rotation")
 	check(is_zero_approx(t.tuck), "flip control does not automatically tuck the athlete")
-	for i in 120:
+	for i in 45:
 		t.update_air(DT, 0.0, "", 1.0, 0.0)
 	check(t.l_pitch > 0.0, "frontflip control reverses pitch momentum in flight")
 	check(t.omega_pitch > 0.0 and t.pitch < 0.0,

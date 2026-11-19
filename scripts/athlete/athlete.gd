@@ -75,6 +75,181 @@ var sticky_cycles: int = 0
 var sticky_work: float = 0.0                   # J of actuator work put into the line while gripping
 var _sticky_prev_vf: float = 0.0
 
+## --- Simple controls: right hand = power, left hand = position ----------
+## RIGHT (SPACE / right thumb): pump the line in every position. Hold = sink
+## into the line, release = drive off it. How much power the body can put in
+## depends on what is pushing: legs on the feet, hips from the butt, arms and
+## chest, and least lying on the back.
+const POSITION_POWER := {"": 1.0, "feet": 1.0, "butt": 0.9, "chest": 0.8, "back": 0.5}
+@export var pose_pump_sink: float = 0.03       # m the body sinks below its resting height while loading
+## LEFT (Z X C V / left thumb): where he lands - feet, butt, chest or back.
+## In a real jump the landing is LOCKED late, close to touchdown (the last
+## TrickController.LOCK_WINDOW s). Too early does not count; no lock = fail.
+const LANDING_IDS := ["feet", "butt", "chest", "back"]
+@export var lock_min_flight: float = 0.55      # s; shorter hops land in place, nothing to lock
+## Assist for autopilots / physics tests: lock the default landing by itself.
+var auto_lock: bool = false
+## Hardcore (menu setting): a real jump with no lock is a fail. Off (default):
+## he lands in whatever position the body is closest to; a lock is optional
+## and only helps (steers onto the chosen position while the player is not
+## rotating him).
+var require_lock: bool = false
+var _pending_choice: String = ""   # pressed early (easy mode): locks itself when the window opens
+## Balance is automatic (the left hand chooses positions now). A player's
+## balance input still overrides it.
+@export var auto_balance: bool = true
+var needs_lock: bool = false
+
+## --- Fails: random type, ragdoll fall, quick reset ----------------------
+signal failed(kind: String)
+const FAIL_KINDS := ["over_rotate", "under_rotate", "feet_miss", "twisted_off", "ejected"]
+const FAIL_TEXT := {
+	"over_rotate": ["OVER-ROTATED!", "Too much spin!", "Whoa, one flip too many!"],
+	"under_rotate": ["UNDER-ROTATED!", "Not quite round!", "Short on spin!"],
+	"feet_miss": ["MISSED THE LINE!", "Where did the line go?", "Feet found air!"],
+	"twisted_off": ["TWISTED OFF!", "Sideways and gone!", "Lost the balance!"],
+	"ejected": ["EJECTED!", "The line said no!", "Launched off the line!"],
+}
+@export var fail_min_time: float = 1.1         # s of ragdoll before a reset can happen
+@export var fail_settle_time: float = 0.35     # s lying still on the ground before the reset
+@export var fail_max_time: float = 2.6         # s, reset at the latest
+var fail_kind: String = ""
+var fail_context: String = ""
+var force_fail_kind: String = ""   # debug / captures: always this fail type
+var _ground_t: float = 0.0
+
+
+## Arcade help on the way down: a gentle pull over the line (sideways), so
+## near misses land instead of dropping past it. Far misses still miss.
+@export var line_magnet: float = 9.0           # 1/s^2 spring toward the line
+@export var line_magnet_reach: float = 1.2     # m sideways it still reaches
+@export var air_righting_assist: float = 14.0  # rad/s^2 per rad of sideways lean
+
+
+func _line_magnet(dt: float) -> void:
+	if line_magnet <= 0.0 or linear_velocity.y > 0.5:
+		return
+	var feet := global_position + Vector3.UP * (_air_leg_launch - _air_leg)
+	var ls := line.project_s(feet)
+	if ls < 0.3 or ls > line.chord_length() - 0.3:
+		return
+	var lat := line.lateral_axis()
+	var off := (feet - line.sample_world(ls)).dot(lat)
+	if absf(off) > line_magnet_reach:
+		return
+	var v_lat := linear_velocity.dot(lat)
+	var dv := (-line_magnet * off - 2.0 * sqrt(line_magnet) * v_lat) * dt
+	# an impulse (not a velocity override, which would cancel gravity)
+	apply_central_impulse(lat * dv * mass)
+
+
+static func position_power(pose_id: String) -> float:
+	return float(POSITION_POWER.get(pose_id, 1.0))
+
+
+## s until the landing contact (feet, or butt/chest/back) reaches the line.
+func land_eta() -> float:
+	if state != State.AIRBORNE or line == null:
+		return INF
+	var feet := global_position + Vector3.UP * (_air_leg_launch - _air_leg)
+	var ls := line.project_s(feet)
+	var h := feet.y - line.sample_world(ls).y
+	var vy := linear_velocity.y
+	var g := maxf(tricks.air_gravity, 0.1)
+	if h <= 0.0:
+		return 0.0
+	return (vy + sqrt(vy * vy + 2.0 * g * h)) / g
+
+
+## The left hand locks the landing position (real jumps only).
+func _try_lock(id: String) -> void:
+	var r := tricks.lock_landing(id, land_eta())
+	if r == "early":
+		if require_lock:
+			tricks.say("Too early! Lock it close to the landing")
+		else:
+			# easy mode: remembered, it locks itself when the window opens
+			_pending_choice = id
+			tricks.queued_pose = "" if id == "feet" else id
+			tricks.say("Landing: " + id.to_upper())
+		return
+	_landing_pose_explicit = true
+	var label: String = "FEET" if id == "feet" else String(TrickController.LINE_TRICKS[id]["name"]).to_upper()
+	tricks.say("%s LOCKED%s" % [label, "  PERFECT" if tricks.lock_quality == "perfect" else ""])
+
+
+func _auto_balance_axis(axis: float) -> float:
+	if not auto_balance or absf(axis) > 0.05:
+		return axis
+	return clampf(-(2.2 * balance.theta_seen + 0.6 * balance.omega_seen), -1.0, 1.0)
+
+
+## Picks the fail type: random, weighted by what went wrong.
+func _pick_fail_kind(context: String) -> String:
+	var w := {"over_rotate": 1.0, "under_rotate": 1.0, "feet_miss": 1.0, "twisted_off": 1.0, "ejected": 1.0}
+	match context:
+		"over":
+			w["over_rotate"] = 6.0
+		"under":
+			w["under_rotate"] = 6.0
+		"lateral":
+			w["feet_miss"] = 5.0
+			w["twisted_off"] = 2.0
+		"balance":
+			# out of balance on the line: twisted off sideways or slipping
+			# off; worst from a butt bounce. Nothing to eject you here.
+			w = {"twisted_off": 3.0, "feet_miss": 1.5}
+			if pose == "butt" or _rising_from == "butt" or _launch_pose == "butt":
+				w["twisted_off"] = 6.0
+		"hard":
+			w["ejected"] = 4.0
+	if context in ["over", "under", "lateral", "none", "hard"] and (_launch_pose == "butt" or tricks.queued_pose == "butt") \
+			and absf(balance.theta) > 0.35:
+		w["twisted_off"] = float(w.get("twisted_off", 1.0)) + 3.0
+	var total := 0.0
+	for k in w:
+		total += float(w[k])
+	var r := rng.randf() * total
+	for k in w:
+		r -= float(w[k])
+		if r <= 0.0:
+			return k
+	return w.keys()[0]
+
+
+## Velocity / spin the body flies off with for each fail type (ragdoll).
+func _fail_motion(kind: String, v: Vector3, spin_dir: float) -> Array:
+	var ax := line.axis()
+	var lat := line.lateral_axis()
+	var side := -1.0 if rng.randf() < 0.5 else 1.0
+	var dir := spin_dir if spin_dir != 0.0 else (-1.0 if rng.randf() < 0.5 else 1.0)
+	var w := Vector3.ZERO
+	match kind:
+		"over_rotate":
+			# keeps spinning past the landing: tumbles on, head over heels
+			v += Vector3.UP * rng.randf_range(1.0, 2.5) + ax * dir * rng.randf_range(0.8, 1.8)
+			w = -lat * dir * rng.randf_range(9.0, 13.0) + ax * side * rng.randf_range(0.5, 2.0)
+		"under_rotate":
+			# didn't come round: slams in short, the rest of the turn on the way down
+			v.y = minf(v.y, -1.5) - rng.randf_range(0.0, 1.0)
+			v += ax * -dir * rng.randf_range(0.5, 1.2)
+			w = -lat * dir * rng.randf_range(3.5, 6.0) + ax * side * rng.randf_range(1.0, 3.0)
+		"feet_miss":
+			# the line slips between the legs / past the feet: drops through
+			v.y = minf(v.y, -1.0)
+			v += lat * side * rng.randf_range(0.8, 1.6)
+			w = ax * side * rng.randf_range(3.0, 6.0) - lat * rng.randf_range(-2.0, 2.0)
+		"twisted_off":
+			# twisted sideways off the line: spins round and rolls off it
+			v += lat * side * rng.randf_range(1.6, 2.6) + Vector3.UP * rng.randf_range(0.3, 1.2)
+			w = Vector3.UP * side * rng.randf_range(7.0, 11.0) + ax * side * rng.randf_range(3.0, 5.0)
+		"ejected":
+			# the line throws him off: up and away, tumbling
+			v += Vector3.UP * rng.randf_range(4.0, 6.5) + lat * side * rng.randf_range(1.5, 3.0) + ax * rng.randf_range(-2.0, 2.0)
+			var a := Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1))
+			w = (a.normalized() if a.length() > 0.1 else Vector3.RIGHT) * rng.randf_range(8.0, 13.0)
+	return [v, w]
+
 ## --- Takeoff rotation from the body lean (two-zone controls) -----------
 ## The right-hand AIM leans the body fore/aft while loading and pushing. The
 ## line pushes through the feet, the centre of mass is offset by the lean, so
@@ -132,6 +307,7 @@ var _walk_v: float = 0.0
 ## (into the deceleration) within what the feet on the webbing can hold.
 @export var walk_accel: float = 0.4
 var _rising_from: String = ""   # position the leg drive is lifting out of
+var _pose_time_before_rise: float = 0.0
 var _rise_t: float = 0.0
 ## Motion library (tools/mocap). Key: start>trick>landing.
 const MOCAP_REFS := {
@@ -219,6 +395,11 @@ func _ready() -> void:
 	can_sleep = false
 	collision_layer = 2
 	collision_mask = 1
+	# a little bounce off the sand: ragdoll falls look lively, not stiff
+	var mat := PhysicsMaterial.new()
+	mat.bounce = 0.35
+	mat.friction = 0.7
+	physics_material_override = mat
 	var shape := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.22
@@ -279,7 +460,20 @@ func pre_line_step(dt: float) -> void:
 		balance.arm_left_input = arms
 		balance.arm_right_input = arms
 	if input.trick != "" and state != State.FALLEN:
-		if TrickController.LINE_TRICKS.has(input.trick):
+		if LANDING_IDS.has(input.trick) and state == State.AIRBORNE and needs_lock:
+			# A real jump: the left hand locks the landing late in the jump.
+			_try_lock(input.trick)
+		elif input.trick == "feet":
+			if state == State.AIRBORNE:
+				tricks.set_landing("")
+				tricks.queued_pose = ""
+				_landing_pose_explicit = true
+			elif state == State.ON_LINE and pose != "":
+				_stand_up_from_pose("")
+			elif state == State.ON_LINE and _rising_from != "":
+				tricks.queued_pose = ""
+				_landing_pose_explicit = true
+		elif TrickController.LINE_TRICKS.has(input.trick):
 			if state == State.ON_LINE and pose == "" and (input.pump_held or absf(foot_velocity.y) > 0.6):
 				# Explosive: a full leg drive (with arm swing) off the feet,
 				# flying up and landing in the position.
@@ -351,13 +545,22 @@ func _leg_command(dt: float) -> float:
 		# timing, on the recoil) = drive the legs back under you and up.
 		if input.pump_held:
 			_pose_pushed = true      # player is timing it manually
-			return leg.l_pose
+			return leg.l_pose - pose_pump_sink
 		var vf := line.sample_velocity(s).y
 		var auto := pose_auto_push and not _pose_pushed and _pose_contacted and vf > 0.3
 		if (input.jump_released and _pose_contacted) or auto:
 			_rise_from_pose()
 			return leg.l_max + 0.05
 		return leg.l_pose + 0.04
+	if _rising_from != "":
+		# Pumping in a position: the push is over (or SPACE is pressed again
+		# to load the next one) without leaving the line -> back down into
+		# the position, ready for the next pump.
+		var done := _push_left <= 0.0 and _rise_t > 0.45 and leg.leg_speed(line.solver) <= 0.0 \
+			and line.sample_velocity(s).y < -0.2
+		if (input.pump_held and _rise_t > 0.08) or done:
+			_return_to_pose()
+			return leg.l_pose - (pose_pump_sink if input.pump_held else -0.04)
 	if input.pump_held:
 		_dip_target = move_toward(_dip_target, leg.l_min + 0.04, dip_speed * dt)
 		_push_left = 0.0
@@ -410,6 +613,13 @@ func post_line_step(dt: float) -> void:
 		State.FALLEN:
 			_update_fallen(dt)
 	var crouch := balance.crouch
+	if state == State.ON_LINE and _pose_visual != "":
+		# Sitting/lying on the line: the position already places the hips.
+		# The balance model reads the short leg length (rising out of a
+		# position) as a deep knee squat; drawn on top of the position's own
+		# drop that sank the hips ~0.2 m through the line after every trick.
+		var pe := pose_blend * pose_blend * (3.0 - 2.0 * pose_blend)
+		crouch *= 1.0 - pe
 	var arm_l := balance.arm_left
 	var arm_r := balance.arm_right
 	if state == State.AIRBORNE:
@@ -478,10 +688,100 @@ func post_line_step(dt: float) -> void:
 		# point on the line under the left shoulder (chest bounce hand)
 		"line_pt": Vector3(-0.02, 0.03, -0.62),
 		"sticky": sticky,
+		"ang_vel": angular_velocity if state == State.FALLEN else Vector3.ZERO,
+		"lin_vel": linear_velocity if state == State.FALLEN else Vector3.ZERO,
 	}, dt)
-	if state != State.FALLEN:
-		visual.keep_feet_above(line.ground_height)
+	visual.keep_feet_above(line.ground_height)
+	visual.position.y = _visual_base_y() + seat_lift
 	visual.finish_frame(dt)
+	_keep_seat_above_line(dt)
+
+
+## --- Seat clearance (butt position) ------------------------------------
+## In the butt position the hips/butt are always drawn slightly above the
+## line. If anything would put them through it (a deep V in the line after a
+## big trick landing, the body dropping into the seat faster than the line
+## comes back up), the whole body is raised relative to the line instead.
+const SEAT_CLEARANCE := 0.12      # m, hip joints above the line (glutes ~2 cm above)
+const SEAT_LIFT_RELAX := 0.6      # m/s the extra lift eases back off
+const SEAT_LIFT_MAX := 0.6        # m; a bigger gap is a real miss, not a glitch
+var seat_lift: float = 0.0
+var seat_min_clearance: float = INF   # last measured (for tests / HUD)
+
+
+func _visual_base_y() -> float:
+	return _air_leg_launch - _air_leg if state == State.AIRBORNE else 0.0
+
+
+## World points of the hips and butt of the drawn body.
+func seat_points() -> Array[Vector3]:
+	var pts: Array[Vector3] = []
+	var ch := visual.character
+	if ch != null and ch.visible and not ch.last_pose.is_empty():
+		for bn: String in ["pelvis", "thigh_l", "thigh_r"]:
+			var bi: int = ch._idx.get(bn, -1)
+			if bi >= 0:
+				pts.append(visual.to_global((ch.last_pose[bi] as Transform3D).origin))
+	elif visual._hips != null:
+		pts.append(visual._hips.global_position)
+	return pts
+
+
+func seat_clearance() -> float:
+	var d := INF
+	for p in seat_points():
+		var ls := line.project_s(p)
+		if ls < 0.0 or ls > line.chord_length():
+			continue
+		d = minf(d, p.y - line.sample_world(ls).y)
+	return d
+
+
+func _seat_guard_active() -> bool:
+	if state == State.FALLEN or _pose_visual != "butt" or pose_blend < 0.3:
+		return false
+	if state == State.AIRBORNE:
+		# Just after takeoff (the line springs back up faster than the body
+		# rises) and on the final approach onto the line - not mid-flight,
+		# and not when the body has missed the line and drops past it.
+		var lat := absf((global_position - line.sample_world(line.project_s(global_position))).dot(line.lateral_axis()))
+		if lat > land_lateral_tolerance + 0.15:
+			return false
+		return air_time < 0.3 or (linear_velocity.y < 0.0 and _land_eta() < 0.12)
+	return true
+
+
+func _land_eta() -> float:
+	var ls := line.project_s(global_position)
+	var h := global_position.y + _visual_base_y() - line.sample_world(ls).y
+	var closing := line.sample_velocity(ls).y - linear_velocity.y
+	return h / closing if closing > 0.01 else INF
+
+
+func _keep_seat_above_line(dt: float) -> void:
+	if not _seat_guard_active():
+		seat_min_clearance = INF
+		seat_lift = move_toward(seat_lift, 0.0, SEAT_LIFT_RELAX * dt)
+		return
+	var d := seat_clearance()
+	if d == INF:
+		return
+	if state == State.AIRBORNE:
+		# The rigid body moves after this (physics step) and that is the frame
+		# that gets drawn: look one step ahead so a fast landing never shows
+		# the seat through the line for a frame before the contact catches it.
+		var ls := line.project_s(global_position)
+		var closing := line.sample_velocity(ls).y - linear_velocity.y
+		d -= maxf(0.0, closing) * dt
+	# lift needed so the lowest seat point is SEAT_CLEARANCE above the line
+	var need := clampf(seat_lift + SEAT_CLEARANCE - d, 0.0, SEAT_LIFT_MAX)
+	var new_lift := need if need > seat_lift else move_toward(seat_lift, need, SEAT_LIFT_RELAX * dt)
+	var delta := new_lift - seat_lift
+	seat_lift = new_lift
+	if absf(delta) > 1e-6:
+		# rigid shift of the drawn body, applied this same frame
+		visual.position.y += delta
+	seat_min_clearance = d + delta
 
 
 func _update_on_line(dt: float) -> void:
@@ -513,7 +813,7 @@ func _update_on_line(dt: float) -> void:
 		var tq := athlete_mass * balance.leg_mass_frac * 9.81 * 0.06 * swing * swing_side
 		disturbance = tq / balance.inertia() * (1.0 - 0.5 * balance.crouch)
 	balance.leg_input = input.leg_lift
-	balance.step(dt, input.balance_axis, lat_acc, foot_accel.y, disturbance, pump)
+	balance.step(dt, _auto_balance_axis(input.balance_axis), lat_acc, foot_accel.y, disturbance, pump)
 	# forward/back: line surge along its axis + walking start/stop
 	var a_walk := (_walk_v - _prev_walk_v) / dt
 	_prev_walk_v = _walk_v
@@ -529,7 +829,7 @@ func _update_on_line(dt: float) -> void:
 	_lateral_force = balance.reaction_lateral_force(athlete_mass)
 	global_transform = Transform3D(_line_basis(), foot + Vector3.UP * 0.01)
 	if balance.fallen:
-		fall("balance limit")
+		fall("balance limit", "balance")
 		return
 	# Takeoff is decided by the leg model: leg fully extended while the body
 	# keeps moving away from the line.
@@ -539,9 +839,24 @@ func _update_on_line(dt: float) -> void:
 
 func _update_airborne(dt: float) -> void:
 	air_time += dt
-	balance.step_air(dt, input.balance_axis)
+	# arcade help: the body rights its sideways lean in the air
+	balance.air_righting = air_righting_assist if auto_balance else 0.0
+	balance.step_air(dt, _auto_balance_axis(input.balance_axis))
+	_line_magnet(dt)
+	tricks.land_eta = land_eta()
+	if auto_lock and needs_lock and not tricks.locked and tricks.land_eta <= 0.45:
+		_try_lock(tricks.queued_pose if tricks.queued_pose != "" else "feet")
+	elif _pending_choice != "" and needs_lock and not tricks.locked and tricks.land_eta <= TrickController.LOCK_WINDOW:
+		_try_lock(_pending_choice)
+	if not needs_lock or tricks.locked:
+		_pending_choice = ""
 	# Hold the flip key or SPACE in the air = tuck (faster rotation).
-	tricks.update_air(dt, input.tuck, input.grab, input.flip_axis, input.twist_axis)
+	# Free air control: the aim (arrows / J K H L / right-thumb drag) turns
+	# the body any time in the air - up = backflip, down = frontflip,
+	# sideways = twist - independent of tuck, grabs and leg shapes.
+	var flip_in := clampf(input.flip_axis - input.aim.y, -1.0, 1.0)
+	var twist_in := clampf(input.twist_axis + input.aim.x, -1.0, 1.0)
+	tricks.update_air(dt, input.tuck, input.grab, flip_in, twist_in)
 	tricks.adjust_attitude(dt, input.stick.y * air_attitude_rate, air_attitude_max)
 	# Prepare the landing: straight legs for feet, or the chosen line-trick
 	# position (Z/X/C pressed in the air).
@@ -553,6 +868,25 @@ func _update_airborne(dt: float) -> void:
 	var feet := global_position + Vector3.UP * (_air_leg_launch - _air_leg)
 	var ls := line.project_s(feet)
 	var vy := linear_velocity.y
+	# Right after takeoff the line can ring back up faster than the body
+	# rises. It must not pass through the body: the light line hits the
+	# heavy body and they move on together (inelastic, momentum kept), so
+	# the line is stopped by the body instead of slicing through it. The
+	# body is kept on top of the line; the flight and any set trick go on.
+	if air_time <= 0.08 and ls > 0.3 and ls < line.chord_length() - 0.3:
+		var lp0 := line.sample_world(ls)
+		var lv := line.sample_velocity(ls).y
+		var lat0 := absf((feet - lp0).dot(line.lateral_axis()))
+		if feet.y < lp0.y and lv > vy and lat0 < land_lateral_tolerance + 0.15:
+			var m_line := line.solver.node_mass * 2.0
+			var vc := (athlete_mass * vy + m_line * lv) / (athlete_mass + m_line)
+			line.solver.impart_velocity(ls, athlete_mass, vc, linear_velocity.dot(line.lateral_axis()))
+			global_position.y += lp0.y - feet.y
+			feet.y = lp0.y
+			vy = vc
+			linear_velocity.y = vc
+			_pending_velocity = linear_velocity
+			_apex_y = maxf(_apex_y, global_position.y)
 	if ls > 0.3 and ls < line.chord_length() - 0.3 and air_time > 0.08:
 		var lp := line.sample_world(ls)
 		var dy := feet.y - lp.y
@@ -567,6 +901,13 @@ func _update_airborne(dt: float) -> void:
 		if crossed and closing:
 			var tol := land_lateral_tolerance + (0.15 if tricks.queued_pose != "" else 0.0)
 			if absf(lat_off) <= tol and absf(balance.theta) < balance.fall_angle:
+				# (the line catching the body again right after takeoff is not
+				# a landing: nothing to lock yet, he just stays where he was)
+				var real_descent := air_time > 0.3 or vy < -1.5
+				if require_lock and needs_lock and not tricks.locked and real_descent:
+					last_landing_failure_reason = "no landing position chosen"
+					fall(last_landing_failure_reason, "none")
+					return
 				if tricks.on_land():
 					land(ls, lat_off)
 					if tricks.last_outcome != "clean":
@@ -577,13 +918,17 @@ func _update_airborne(dt: float) -> void:
 						balance.omega += rng.randf_range(0.8, 1.5) * (1.0 if rng.randf() < 0.5 else -1.0)
 				else:
 					last_landing_failure_reason = "rotation outside save window"
-					fall("rotation bailout")
+					fall("rotation bailout", tricks.bail_kind if tricks.bail_kind != "" else "over")
 				return
 			else:
 				var reason := "lateral miss" if absf(lat_off) > tol else "excessive lateral lean"
-				if reason != last_landing_failure_reason:
-					last_landing_failure_reason = reason
-					_record_contact_event("landing rejected: " + reason)
+				last_landing_failure_reason = reason
+				_record_contact_event("landing rejected: " + reason)
+				# Missed the line with the feet (or came down leaning off it):
+				# once the contact point is clearly past the line, it's a fail.
+				if dy < -0.2 and absf(lat_off) < tol + 0.6:
+					fall(reason, "lateral")
+					return
 	# Missed the line: below it, descending, close to the ground.
 	# (no "descending" requirement once the body is down at the ground: the
 	# ground collider stops it at vy = 0, which used to leave the athlete
@@ -591,7 +936,7 @@ func _update_airborne(dt: float) -> void:
 	var low: float = minf(feet.y, global_position.y)
 	if air_time > 0.15 and vy < 0.5 and low < line.ground_height + 0.25:
 		last_landing_failure_reason = "missed line; ground clearance reached"
-		fall(last_landing_failure_reason)
+		fall(last_landing_failure_reason, "lateral")
 	elif not global_position.is_finite() or not linear_velocity.is_finite():
 		# A bad numeric state is the only airborne watchdog: valid high flights
 		# remain governed by gravity and physical line/ground contact, with no
@@ -602,8 +947,16 @@ func _update_airborne(dt: float) -> void:
 
 func _update_fallen(dt: float) -> void:
 	fallen_time += dt
-	if fallen_time > fallen_reset_time:
-		reset_to_line(line.chord_length() * 0.5)
+	# Lying on the sand (low and nearly still): reset shortly after.
+	var low := global_position.y < line.ground_height + 0.6
+	if low and linear_velocity.length() < 1.5:
+		_ground_t += dt
+	else:
+		_ground_t = 0.0
+	var settled := fallen_time > fail_min_time and _ground_t > fail_settle_time
+	if settled or fallen_time > minf(fail_max_time, fallen_reset_time):
+		# straight back onto the line, near where he fell off
+		reset_to_line(clampf(line.project_s(global_position), end_margin, line.chord_length() - end_margin))
 
 
 # ------------------------------------------------------------ transitions
@@ -683,6 +1036,9 @@ func launch(v: Vector3) -> void:
 			tricks.set_landing("")
 	_prev_air_dy = 1.0
 	last_landing_failure_reason = ""
+	# A real jump (not a small hop, not the line dropping away under a
+	# position) needs the landing locked late in the air.
+	needs_lock = not tricks.hop and tricks.set_T >= lock_min_flight
 	_record_contact_event("takeoff from " + (contact_source if contact_source != "" else "feet"))
 
 
@@ -761,25 +1117,54 @@ func land(at_s: float, lateral_offset: float) -> void:
 	global_transform = Transform3D(_line_basis(), line.sample_world(s))
 
 
-func fall(reason: String = "unspecified") -> void:
+## A fail. context says what went wrong ("over"/"under" rotation,
+## "lateral" miss, "balance" on the line, "none" = no landing chosen, "hard"),
+## the fail type is then picked at random, weighted by it. The body goes
+## floppy (ragdoll) and flies off the way that fail looks.
+func fall(reason: String = "unspecified", context: String = "") -> void:
 	if state == State.FALLEN:
 		return
 	set_power(0)
 	last_landing_failure_reason = reason
-	_record_contact_event("fall: " + reason)
+	fail_context = context
+	fail_kind = force_fail_kind if force_fail_kind != "" else _pick_fail_kind(context)
+	_record_contact_event("fall: " + reason + " -> " + fail_kind)
+	var spin_dir := signf(tricks.omega_pitch) if absf(tricks.omega_pitch) > 0.5 else 0.0
+	# Keep the body exactly where and how it is drawn (flight rotation about
+	# the centre of mass included), then let it tumble from there.
+	var com_w := visual.to_global(Vector3(0, AthleteVisual.COM_HEIGHT, 0))
 	var b := _line_basis() * Basis(Vector3(0, 0, -1), balance.theta) * Basis(Vector3.RIGHT, -balance.phi)
+	if state == State.AIRBORNE and visual._trick != null:
+		b = global_transform.basis * visual._trick.basis
 	var v := foot_velocity if state == State.ON_LINE else linear_velocity
 	v += line.lateral_axis() * balance.omega * balance.com_height * 0.5
+	var w := line.axis() * balance.omega - line.lateral_axis() * balance.phi_dot
+	var m: Array = _fail_motion(fail_kind, v, spin_dir)
+	v = m[0]
+	w += m[1]
 	line.clear_contact()
 	_set_state(State.FALLEN)
 	fallen_time = 0.0
+	_ground_t = 0.0
+	tricks.reset()
+	pose = ""
+	_rising_from = ""
+	_pose_visual = ""
+	pose_blend = 0.0
+	seat_lift = 0.0
+	visual.position.y = 0.0
 	visual.set_body(0.0, 0.0, balance.arm_left, balance.arm_right, 0.0, balance.com_height)
+	visual.set_trick_rotation(0.0, 0.0)
+	visual.ragdoll_start(rng.randi(), fail_kind)
 	lock_rotation = false
-	global_transform = Transform3D(b, global_position)
+	global_transform = Transform3D(b.orthonormalized(), com_w - b.orthonormalized() * Vector3(0, AthleteVisual.COM_HEIGHT, 0))
 	freeze = false
 	_pending_velocity = v
-	_pending_angular = line.axis() * balance.omega - line.lateral_axis() * balance.phi_dot
+	_pending_angular = w
 	linear_velocity = v
+	var texts: Array = FAIL_TEXT[fail_kind]
+	tricks.say("FAIL! " + String(texts[rng.randi() % texts.size()]))
+	failed.emit(fail_kind)
 
 
 func reset_to_line(at_s: float) -> void:
@@ -800,6 +1185,7 @@ func reset_to_line(at_s: float) -> void:
 	leg.begin_contact(line.solver, s, stance - 0.025, 0.0)
 	_line_combo = 0
 	visual.position.y = 0.0
+	seat_lift = 0.0
 	line_mean_y = line.sample_world(s).y
 	_dip_target = stance
 	_push_left = 0.0
@@ -823,6 +1209,10 @@ func reset_to_line(at_s: float) -> void:
 	_lateral_force = 0.0
 	foot_velocity = Vector3.ZERO
 	foot_accel = Vector3.ZERO
+	needs_lock = false
+	_pending_choice = ""
+	_ground_t = 0.0
+	visual.ragdoll_stop()
 	global_transform = Transform3D(_line_basis(), line.sample_world(s))
 	_record_contact_event("reset to line")
 	_set_state(State.ON_LINE)
@@ -853,7 +1243,7 @@ func _set_contact_geometry(pose_id: String) -> void:
 		leg.min_len = minf(leg.l_min, maxf(leg.l_pose + 0.002, leg.leg_length(line.solver)))
 	else:
 		leg.contact_max = leg.l_pose + POSE_REACH
-		leg.strength = pose_strength
+		leg.strength = position_power(pose_id)
 		leg.c_stop = pose_tissue_damping
 		leg.min_len = leg.l_pose
 
@@ -931,6 +1321,7 @@ func _update_arm_swing(dt: float) -> void:
 
 func _rise_from_pose() -> void:
 	_rising_from = pose
+	_pose_time_before_rise = pose_time
 	_rise_t = 0.0
 	var from := pose
 	pose = ""
@@ -940,25 +1331,34 @@ func _rise_from_pose() -> void:
 	# only the arms and hips (short stroke, weaker).
 	var reach: float = butt_push_reach if from == "butt" else pose_push_reach
 	leg.contact_max = leg.l_pose + reach
-	leg.strength = butt_push_strength if from == "butt" else pose_strength
+	# Pumping power by position (feet 100 %, butt 90 %, chest 80 %, back 50 %).
+	leg.strength = position_power(from)
 	_push_left = push_time
 	_pose_pushed = true
 	_record_contact_event("push attempt from " + from)
 
 
 func _recover_stalled_pose_rise() -> void:
+	_return_to_pose()
+
+
+## A push out of a position that did not leave the line: settle back into the
+## same position (no points, no takeoff) so the player can pump again.
+func _return_to_pose() -> void:
 	var source := _rising_from
-	_set_contact_geometry("")
 	_rising_from = ""
 	_rise_t = 0.0
-	_pose_contacted = false
-	_pose_pushed = false
-	_dip_target = leg.l_max - stance_bend
-	if not _landing_pose_explicit:
-		tricks.queued_pose = ""
-	if source != "":
-		last_landing_failure_reason = source + " push did not reach takeoff; recovered to feet"
-		_record_contact_event(last_landing_failure_reason)
+	_push_left = 0.0
+	if source == "":
+		return
+	var t_in_pose := _pose_time_before_rise + _rise_t
+	_enter_pose(source, false)
+	pose_time = t_in_pose          # the position's time-out keeps running
+	_pose_contacted = leg.leg_length(line.solver) <= leg.l_pose + 0.05
+	# the technique assist may push again on the next recoil (pumping)
+	_pose_pushed = input.pump_held
+	last_landing_failure_reason = source + " push did not reach takeoff; back in the position"
+	_record_contact_event(last_landing_failure_reason)
 
 
 func _record_contact_event(event_name: String) -> void:
@@ -981,8 +1381,9 @@ func _record_contact_event(event_name: String) -> void:
 	contact_state_duration = 0.0
 
 
-func _stand_up_from_pose() -> void:
-	tricks.say("Weak bounce - push off with SPACE, or bounce harder first")
+func _stand_up_from_pose(msg: String = "Weak bounce - pump with SPACE, or bounce harder first") -> void:
+	if msg != "":
+		tricks.say(msg)
 	pose = ""
 	_line_combo = 0
 	_set_contact_geometry("")

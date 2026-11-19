@@ -103,6 +103,7 @@ func _apply_session_settings() -> void:
 		line.apply_preset(GameSettings.apply_to_params(load(path)))
 	var p: Dictionary = GameSettings.preset()
 	athlete.apply_arcade(p["push"], p["air_g"])
+	athlete.require_lock = GameSettings.landing_lock
 	audio_director.music_enabled = GameSettings.music_on
 
 

@@ -8,10 +8,6 @@
 
 config_version=5
 
-[autoload]
-
-GameSettings="*res://scripts/core/game_settings.gd"
-
 [application]
 
 config/name="SLACKLINE"
@@ -19,6 +15,10 @@ config/description="Arcade trickline game for iPhone"
 config/version="0.2.0"
 run/main_scene="res://scenes/menu.tscn"
 config/features=PackedStringArray("4.7", "Mobile")
+
+[autoload]
+
+GameSettings="*res://scripts/core/game_settings.gd"
 
 [display]
 

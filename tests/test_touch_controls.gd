@@ -21,17 +21,16 @@ func test_both_hands_work_at_the_same_time() -> void:
 	var p := _make(Rect2(0, 0, 1280, 720))
 	var input: AthleteInput = p[0]
 	var c = p[1]
-	c._touch_down(1, Vector2(200, 500))        # left thumb
-	c._touch_drag(1, Vector2(270, 500))        # full right weight shift
-	c._touch_down(2, Vector2(1000, 550))       # right thumb: hold
+	c._touch_down(1, c.pad_point("right"))     # left thumb: CHEST on the position pad
+	c._touch_down(2, Vector2(1000, 550))       # right thumb: hold (pump)
 	c._touch_drag(2, Vector2(1000, 490))       # drag up: aim back
 	input.poll()
-	check(input.hold and input.pump_held and input.tuck == 1.0, "right thumb hold = load / tuck")
-	check(input.balance_axis > 0.9, "left thumb shifts weight right (%.2f)" % input.balance_axis)
+	check(input.hold and input.pump_held and input.tuck == 1.0, "right thumb hold = pump / tuck")
+	check(input.trick == "chest", "left thumb toward the right = chest (%s)" % input.trick)
 	check(input.aim.y > 0.9, "drag up while holding aims a backflip (%.2f)" % input.aim.y)
 	c._touch_up(1)
 	input.poll()
-	check(absf(input.balance_axis) < 1e-6 and input.hold, "lifting the left thumb keeps the right hold")
+	check(input.hold, "lifting the left thumb keeps the right hold")
 	c._touch_up(2)
 	input.poll()
 	check(not input.hold and input.aim == Vector2.ZERO, "lifting the right thumb releases (= drive / open)")
@@ -52,15 +51,29 @@ func test_drag_down_is_frontflip_and_sideways_is_twist() -> void:
 	_free(p)
 
 
-func test_stick_up_walks_forward() -> void:
+func test_position_pad_directions_choose_the_landing() -> void:
 	var p := _make(Rect2(0, 0, 1280, 720))
 	var input: AthleteInput = p[0]
 	var c = p[1]
-	c._touch_down(1, Vector2(250, 500))
-	c._touch_drag(1, Vector2(250, 420))
+	for dir in ["up", "down", "left", "right"]:
+		c._touch_down(1, c.pad_point(dir))
+		input.poll()
+		check(input.trick == c.PAD_IDS[dir], "pad %s = %s (%s)" % [dir, c.PAD_IDS[dir], input.trick])
+		input.poll()
+		check(input.trick == "", "holding the thumb does not repeat the choice")
+		c._touch_up(1)
+	# slide from FEET to BACK: re-chooses once per new direction
+	c._touch_down(2, c.pad_point("up"))
 	input.poll()
-	check(input.move_axis > 0.9 and input.stick.y > 0.9, "stick up = walk forward / air attitude")
-	c._touch_up(1)
+	c._touch_drag(2, c.pad_point("left"))
+	input.poll()
+	check(input.trick == "back", "sliding to the left re-chooses the back (%s)" % input.trick)
+	c._touch_drag(2, c.pad_center())
+	input.poll()
+	check(input.trick == "", "back to the centre chooses nothing")
+	c._touch_up(2)
+	check(c.pad_center().x < c.safe_rect.get_center().x, "pad is on the left-hand side")
+	check(c.PAD_IDS.values().size() == 4 and c.PAD_IDS.values().has("feet"), "feet, butt, chest and back on the pad")
 	_free(p)
 
 
@@ -78,13 +91,10 @@ func test_grab_and_positions_are_independent_buttons() -> void:
 	c._touch_up(4)
 	input.poll()
 	check(input.grab == "", "grab released")
-	for i in [1, 2, 3]:
-		c._touch_down(6, c._button_center(i))
-		input.poll()
-		check(input.trick == c.POSITION_IDS[i], "%s button requests the %s position" % [c.ACTION_LABELS[i], c.POSITION_IDS[i]])
-		c._touch_up(6)
-		input.poll()
-	check(not input.hold, "buttons never start a hold")
+	c._touch_down(6, c.pad_point("down"))
+	input.poll()
+	check(input.trick == "butt" and not input.hold, "position pad never starts a hold")
+	c._touch_up(6)
 	_free(p)
 
 
@@ -98,6 +108,12 @@ func test_buttons_stay_inside_small_and_tall_safe_areas() -> void:
 			check(rect.grow(0.5).encloses(Rect2(center - Vector2(r, r), Vector2(r, r) * 2.0)),
 				"%s inside safe area %s" % [c.ACTION_LABELS[i], rect])
 			check(not c._is_left(center), "%s is on the right-hand side" % c.ACTION_LABELS[i])
+		var pr: float = c._pad_radius() * 0.42
+		for dir in ["up", "down", "left", "right"]:
+			var pp: Vector2 = c.pad_point(dir)
+			check(rect.grow(0.5).encloses(Rect2(pp - Vector2(pr, pr), Vector2(pr, pr) * 2.0)),
+				"pad %s inside safe area %s" % [dir, rect])
+			check(c._is_left(pp), "pad %s is on the left-hand side" % dir)
 		_free(p)
 
 
@@ -105,7 +121,7 @@ func test_left_thumb_down_is_the_sticky_grip() -> void:
 	var p := _make(Rect2(0, 0, 1280, 720))
 	var input: AthleteInput = p[0]
 	var c = p[1]
-	c._touch_down(1, Vector2(200, 500))
+	c._touch_down(1, c.pad_point("down"))
 	input.poll()
 	check(input.grip_held and not input.grab_held, "left thumb down = grip the line (not an air grab)")
 	c._touch_up(1)

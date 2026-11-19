@@ -20,6 +20,8 @@ var _was_airborne: bool = false
 var _landed_count: int = 0
 var _skipped_seen: int = 0
 var open_early: float = 0.8   # rad before upright to open the tuck
+## Locks the landing this many seconds before touchdown (inside the window).
+const LOCK_AT := 0.4
 
 ## "video" mode: the combo from the reference clip (Rio beach, 6 tricks with
 ## no pause): every flip starts from and lands in a body position.
@@ -138,7 +140,12 @@ func step(dt: float) -> void:
 			# Land into a bounce position when the next trick is a line trick, or
 			# when an air trick is next (it will be set from that position).
 			var want := nxt if TrickController.LINE_TRICKS.has(nxt) else "butt"
-			if athlete.tricks.queued_pose == "" and not athlete.tricks.is_rotating() \
+			if athlete.needs_lock:
+				# a real jump: lock the landing late, like a player (left hand)
+				if not tr.locked and athlete.land_eta() < LOCK_AT:
+					var spinning := tr.is_rotating() or absf(tr.l_pitch) >= 1.0
+					inp.override_trick = tr.queued_pose if tr.queued_pose != "" else ("feet" if spinning else want)
+			elif athlete.tricks.queued_pose == "" and not athlete.tricks.is_rotating() \
 					and absf(athlete.tricks.l_pitch) < 1.0:
 				inp.override_trick = want
 		Athlete.State.FALLEN:
@@ -188,6 +195,8 @@ func _step_video(dt: float) -> void:
 		Athlete.State.AIRBORNE:
 			_was_airborne = true
 			inp.override_pump = tr.tuck_hint(open_early) > 0.5
+			if athlete.needs_lock and not tr.locked and athlete.land_eta() < LOCK_AT:
+				inp.override_trick = cur[1]
 		Athlete.State.FALLEN:
 			_step = 0
 			_set_done = false

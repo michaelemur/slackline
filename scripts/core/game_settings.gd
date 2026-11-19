@@ -24,6 +24,9 @@ var line_height: float = 2.2            # m, anchor height
 var explosiveness: String = "balanced"
 var line_length: String = "Trickline 15m"
 var music_on: bool = true
+## Hardcore: every real jump needs its landing locked late, or it's a fail.
+## Off: land wherever the body is closest to (fails only when it's way off).
+var landing_lock: bool = false
 var from_menu: bool = false             # true when the session was started from the menu
 
 
@@ -55,6 +58,7 @@ func save_settings() -> void:
 	cfg.set_value("game", "explosiveness", explosiveness)
 	cfg.set_value("game", "line_length", line_length)
 	cfg.set_value("game", "music_on", music_on)
+	cfg.set_value("game", "landing_lock", landing_lock)
 	cfg.save(SAVE_PATH)
 
 
@@ -69,3 +73,4 @@ func load_settings() -> void:
 		explosiveness = "balanced"
 	line_length = cfg.get_value("game", "line_length", line_length)
 	music_on = cfg.get_value("game", "music_on", music_on)
+	landing_lock = bool(cfg.get_value("game", "landing_lock", landing_lock))

@@ -17,7 +17,15 @@ const BINDINGS := {
 	"aim_twist_left": [KEY_LEFT, KEY_H],
 	"aim_twist_right": [KEY_RIGHT, KEY_L],
 	"grab": [KEY_F],
-	# line positions (where to land / drop into)
+	# air: grabs and leg shapes (hold; any time in the air, with any rotation)
+	"grab_both_knees": [KEY_B],
+	"grab_knee": [KEY_N],
+	"grab_cross": [KEY_P],
+	"air_pike": [KEY_U],
+	"air_straddle": [KEY_I],
+	"air_split": [KEY_O],
+	# LEFT hand: landing position (lock it late in the jump) / drop into it
+	"trick_feet": [KEY_V],
 	"trick_butt": [KEY_Z],
 	"trick_chest": [KEY_X],
 	"trick_back": [KEY_C],
@@ -37,7 +45,7 @@ const BINDINGS := {
 	"cam_orbit_left": [KEY_BRACKETLEFT, KEY_9],
 	"cam_orbit_right": [KEY_BRACKETRIGHT, KEY_0],
 	"toggle_com": [KEY_F9],
-	"toggle_character": [KEY_V],
+	"toggle_character": [KEY_F8],
 	"demo_toggle": [KEY_T],
 	"slow_motion": [KEY_M],
 	"toggle_music": [KEY_N],
@@ -56,6 +64,7 @@ static func ensure_actions() -> void:
 	_add_joy_button("pump", JOY_BUTTON_A)
 	_add_joy_button("body_tuck", JOY_BUTTON_A)
 	_add_joy_button("grab", JOY_BUTTON_X)
+	_add_joy_button("trick_feet", JOY_BUTTON_DPAD_UP)
 	_add_joy_button("trick_butt", JOY_BUTTON_DPAD_DOWN)
 	_add_joy_button("trick_chest", JOY_BUTTON_DPAD_RIGHT)
 	_add_joy_button("trick_back", JOY_BUTTON_DPAD_LEFT)

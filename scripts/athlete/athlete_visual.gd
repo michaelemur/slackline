@@ -347,6 +347,9 @@ func apply_body(ctx: Dictionary, dt: float) -> void:
 	if _thigh_l == null:
 		return
 	var st: int = ctx.get("state", 0)
+	if st == 2 and ragdoll_on:
+		_ragdoll_step(ctx, dt)
+		return
 	var pose: String = ctx.get("pose", "")
 	var pb: float = ctx.get("pose_b", 0.0)
 	var e := pb * pb * (3.0 - 2.0 * pb)
@@ -494,6 +497,137 @@ func apply_body(ctx: Dictionary, dt: float) -> void:
 
 
 var _elbow := {"l": 0.4, "r": 0.4}
+
+
+# ---------------------------------------------------------------- ragdoll
+## Fails: the body goes floppy. Every joint becomes a loose, under-damped
+## pendulum: gravity pulls each limb toward hanging, the body's spin flings
+## them out and makes them lag behind, and every hit on the ground kicks
+## them about. Joint limits are bouncy. Visual only, like the rest of the rig.
+var ragdoll_on := false
+var ragdoll_kind := ""
+var _rag := {}               # key -> Vector2(angle, velocity)
+var _rag_rng := RandomNumberGenerator.new()
+var _rag_prev_w := Vector3.ZERO
+var _rag_prev_v := Vector3.ZERO
+var ragdoll_energy := 0.0    # mean |joint velocity| (rad/s), for tests / tuning
+const RAG_HANG_W := 5.5      # rad/s, limb pendulum frequency under gravity
+const RAG_TONE_W := 2.2      # rad/s, leftover muscle tone toward a relaxed shape
+const RAG_ZETA := 0.16       # very little damping: floppy
+const RAG_KICK := 3.2        # rad/s of flail per m/s of impact
+## [key, node getter, axis ("x"/"z"), hangs up (torso) instead of down, relaxed angle, limit]
+const RAG_JOINTS := [
+	["thx_l", "_thigh_l", "x", false, 0.35, "thigh_x"], ["thz_l", "_thigh_l", "z", false, -0.15, "thigh_z"],
+	["thx_r", "_thigh_r", "x", false, 0.25, "thigh_x"], ["thz_r", "_thigh_r", "z", false, 0.15, "thigh_z"],
+	["shx_l", "_shin_l", "x", false, -0.5, "shin_x"], ["shx_r", "_shin_r", "x", false, -0.4, "shin_x"],
+	["ax_l", "_arm_l", "x", false, 0.3, "arm_x"], ["az_l", "_arm_l", "z", false, -0.9, "arm_z"],
+	["ax_r", "_arm_r", "x", false, 0.3, "arm_x"], ["az_r", "_arm_r", "z", false, 0.9, "arm_z"],
+	["upx", "_upper", "x", true, 0.15, "upper_x"], ["upz", "_upper", "z", true, 0.0, "upper_z"],
+]
+
+
+func ragdoll_start(seed_value: int, kind: String) -> void:
+	ragdoll_on = true
+	ragdoll_kind = kind
+	_rag_rng.seed = seed_value
+	_rag.clear()
+	_rag_prev_w = Vector3.ZERO
+	_rag_prev_v = Vector3.ZERO
+	for j: Array in RAG_JOINTS:
+		var n: Node3D = get(j[1])
+		var a: float = n.rotation.x if j[2] == "x" else n.rotation.z
+		# start with a jolt: the fail throws the limbs about
+		_rag[j[0]] = Vector2(a, _rag_rng.randf_range(-6.0, 6.0))
+	for side in ["l", "r"]:
+		_rag["el_" + side] = Vector2(_elbow[side], _rag_rng.randf_range(-5.0, 5.0))
+
+
+func ragdoll_stop() -> void:
+	ragdoll_on = false
+	ragdoll_energy = 0.0
+	_rag.clear()
+	_jt.clear()        # joints restart from the standing pose, no spring carry-over
+
+
+func _ragdoll_step(ctx: Dictionary, dt: float) -> void:
+	var w_world: Vector3 = ctx.get("ang_vel", Vector3.ZERO)
+	var v_world: Vector3 = ctx.get("lin_vel", Vector3.ZERO)
+	var alpha_world := (w_world - _rag_prev_w) / maxf(dt, 1e-4)
+	var jolt := (v_world - _rag_prev_v).length()   # m/s lost in one frame = an impact
+	_rag_prev_w = w_world
+	_rag_prev_v = v_world
+	var spin := w_world.length()
+	var kick := maxf(0.0, jolt - 1.2) * RAG_KICK
+	var energy := 0.0
+	var n_j := 0
+	_pivot.basis = Basis.IDENTITY
+	_hips.position.y = LEG_LEN
+	for j: Array in RAG_JOINTS:
+		var node: Node3D = get(j[1])
+		var parent := node.get_parent() as Node3D
+		var pb := parent.global_basis.orthonormalized().inverse()
+		var g := pb * Vector3.DOWN
+		var wl := pb * w_world
+		var al := pb * alpha_world
+		var st: Vector2 = _rag[j[0]]
+		var up: bool = j[3]
+		var theta_g: float
+		var g_perp: float
+		if j[2] == "x":
+			theta_g = atan2(g.z, g.y) if up else atan2(-g.z, -g.y)
+			g_perp = Vector2(g.y, g.z).length()
+		else:
+			theta_g = atan2(-g.x, g.y) if up else atan2(g.x, -g.y)
+			g_perp = Vector2(g.x, g.y).length()
+		var w_hang := RAG_HANG_W * (0.45 if up else 1.0)
+		var rest: float = j[4]
+		# centrifugal: a fast tumble flings arms and legs out
+		if j[2] == "z" and not up:
+			rest += signf(rest) * clampf(spin * 0.12, 0.0, 1.4)
+		var axis_alpha: float = al.x if j[2] == "x" else al.z
+		var axis_w: float = wl.x if j[2] == "x" else wl.z
+		var acc := -w_hang * w_hang * g_perp * sin(st.x - theta_g)
+		acc += -RAG_TONE_W * RAG_TONE_W * (st.x - rest)
+		acc += -2.0 * RAG_ZETA * w_hang * (st.y + axis_w * 0.15)
+		acc -= axis_alpha * (0.35 if up else 0.8)      # limbs lag the body's spin-up
+		st.y += acc * dt
+		if kick > 0.0:
+			st.y += _rag_rng.randf_range(-1.0, 1.0) * kick
+		st.x += st.y * dt
+		var lim: Vector2 = JOINT_LIMIT[j[5]]
+		if st.x < lim.x:
+			st = Vector2(lim.x, -st.y * 0.35)
+		elif st.x > lim.y:
+			st = Vector2(lim.y, -st.y * 0.35)
+		_rag[j[0]] = st
+		if j[2] == "x":
+			node.rotation.x = st.x
+		else:
+			node.rotation.z = st.x
+		energy += absf(st.y)
+		n_j += 1
+	# floppy elbows
+	for side: String in ["l", "r"]:
+		var e: Vector2 = _rag["el_" + side]
+		var acc := -RAG_TONE_W * RAG_TONE_W * 2.0 * (e.x - 0.5) - 2.0 * RAG_ZETA * 6.0 * e.y
+		e.y += acc * dt + (_rag_rng.randf_range(-1.0, 1.0) * kick if kick > 0.0 else 0.0)
+		e.x += e.y * dt
+		if e.x < 0.05 or e.x > 2.5:
+			e = Vector2(clampf(e.x, 0.05, 2.5), -e.y * 0.35)
+		_rag["el_" + side] = e
+		_elbow[side] = e.x
+		energy += absf(e.y)
+		n_j += 1
+	ragdoll_energy = energy / maxf(1.0, n_j)
+	if character != null:
+		character.elbow_cmd = _elbow
+		character.elbow_w = 1.0
+		for side: String in ["l", "r"]:
+			character.foot_contact[side] = 0.0
+			character.foot_offset[side] = Vector3.ZERO
+			character.hand_goal[side] = []
+
+
 ## Back bounce hip flexion: torso ~25 deg above horizontal, legs 45 deg above
 ## horizontal -> hip flexion = 180 - 25 - 45... measured on the rig (see test).
 const BACK_HIP := 0.70
@@ -519,6 +653,12 @@ func _grab_leg_shape(grab: String, side: String) -> Vector3:
 			return Vector3(1.75, -1.85, 0.0) if side == "l" else Vector3(0.3, -0.35, 0.1)
 		"tuck":
 			return Vector3(TUCK_HIP, -TUCK_KNEE, 0.08)
+		"pike":
+			return Vector3(1.65, -0.05, 0.06)
+		"straddle":
+			return Vector3(1.4, -0.05, 0.78)
+		"split":
+			return Vector3(1.35, -0.05, 0.05) if side == "l" else Vector3(-0.45, -0.15, 0.05)
 	return Vector3(0.0, 0.0, 0.0)
 
 

@@ -46,6 +46,30 @@ const POSE_NAMES := {"": "", "feet": "", "butt": "Butt", "chest": "Chest", "back
 const LAND_TOLERANCE := 0.7     # rad (40 deg), clean landing window
 const SAVE_MIN := 0.6           # rad, beyond clean: save onto chest/back...
 const SAVE_MAX := 2.2           # ...up to here; more = bail
+## The position the player chose (butt/chest/back) wins while the body is
+## this close to it: it lands there (with a wobble beyond LAND_TOLERANCE)
+## instead of whichever position the wrapped angle happens to be nearest.
+const CHOICE_WINDOW := 1.15     # rad (~65 deg)
+## Lying positions by facing angle: chest is face-down (+90 deg), back is
+## face-up (-90 deg). Beyond LIE_MAX the body is upside down: no position.
+const LIE_MIN := PI * 0.25
+const LIE_MAX := PI * 0.8
+## Late landing lock (left hand): within LOCK_WINDOW s of touchdown the body
+## can still be steered onto the chosen position with at most
+## LOCK_STEER rad/s^2 (arms, hips, legs reaching). Spinning too fast (tuck
+## opened too late) is more than that can fix: over-rotation.
+const LOCK_WINDOW := 0.75
+const LOCK_STEER := 26.0
+const PERFECT_LOCK := 0.28      # s before touchdown or later = perfect lock
+## Twisted half a turn about the long axis, the face points the other way:
+## chest and back swap for the same pitch.
+var locked: bool = false
+var lock_pose: String = ""
+var lock_target: float = 0.0    # raw pitch the steering aims for
+var lock_eta: float = 0.0       # s to touchdown at the moment of the lock
+var land_eta: float = INF       # s to touchdown, updated by the athlete each tick
+var lock_quality: String = ""   # "perfect" / "ok"
+var bail_kind: String = ""      # "over" / "under" on a rotation bail
 
 # --- body (estimates) ---
 ## Moments of inertia about the side axis through the COM (75 kg, 1.75 m):
@@ -73,6 +97,10 @@ const GRABS := {
 	"leg": {"name": "Leg Grab", "I": 9.4, "points": 250},
 	"cross": {"name": "Cross Grab", "I": 7.2, "points": 300},
 	"tuck": {"name": "Tuck Grab", "I": 4.2, "points": 150},
+	# leg shapes without the hands (aerial poses)
+	"pike": {"name": "Pike", "I": 7.0, "points": 150},
+	"straddle": {"name": "Straddle", "I": 8.2, "points": 180},
+	"split": {"name": "Split", "I": 10.5, "points": 200},
 }
 const GRAB_MIN_HOLD := 0.25      # s held to count
 var grab: String = ""
@@ -82,8 +110,14 @@ var _grabbed := {}
 var twist_gain: float = 3.2      # twist L per m/s
 ## Direct mid-air controls add angular momentum gradually. They let the player
 ## accelerate, release, and reverse rotation without a canned trick impulse.
-var pitch_control_torque: float = 30.0
-var twist_control_torque: float = 5.0
+var pitch_control_torque: float = 55.0
+var twist_control_torque: float = 9.0
+## Free air control: after the player lets go of the rotation keys for this
+## long, a gentle assist settles the spin onto a landable angle (open body
+## only; tucking or pressing a rotation always wins).
+var settle_after: float = 0.3
+var _air_input_used := false
+var _flip_hands_off := 0.0
 var twist_l_max: float = 8.0
 var _player_flip_controlled := false
 var _player_twist_controlled := false
@@ -192,6 +226,8 @@ func on_launch(v_up: float, from_pose: String = "", from_angle: float = 0.0) -> 
 	_attitude_used = 0.0
 	_player_flip_controlled = false
 	_player_twist_controlled = false
+	_air_input_used = false
+	_flip_hands_off = 0.0
 	_direct_pitch_progress = 0.0
 	_direct_pitch_direction = 0.0
 	_direct_front_count = 0
@@ -199,6 +235,11 @@ func on_launch(v_up: float, from_pose: String = "", from_angle: float = 0.0) -> 
 	_direct_twist_progress = 0.0
 	_direct_twist_direction = 0.0
 	_direct_twist_halves = 0
+	locked = false
+	lock_pose = ""
+	lock_quality = ""
+	land_eta = INF
+	bail_kind = ""
 	if queued != "":
 		var dt_ms := Time.get_ticks_msec() - _queued_ms
 		timing = "perfect" if dt_ms <= PERFECT_WINDOW_MS else "ok"
@@ -339,15 +380,29 @@ func update_air(dt: float, tuck_input: float = 0.0, grab_input: String = "",
 	# orientation (perfect timing = stronger help).
 	if absf(flip_input) > 0.001:
 		_player_flip_controlled = true
+		_air_input_used = true
 		_flip_started = true
-		l_pitch = clampf(l_pitch + flip_input * pitch_control_torque * dt, -l_max, l_max)
-	if _flip_started and not _player_flip_controlled and tuck_input < 0.5 and air_t > 0.15:
+		_flip_hands_off = 0.0
+		ref = null      # the player drives the body now, not a recorded movement
+		# pushing against the current spin brakes harder: quick reversals
+		var against := 2.0 if signf(flip_input) != signf(l_pitch) and absf(l_pitch) > 1.0 else 1.0
+		l_pitch = clampf(l_pitch + flip_input * pitch_control_torque * against * dt, -l_max, l_max)
+	else:
+		_flip_hands_off += dt
+	var settle := not _player_flip_controlled or (_air_input_used and _flip_hands_off > settle_after)
+	if _flip_started and settle and tuck_input < 0.5 and air_t > 0.15:
 		var t_left := maxf(0.12, set_T - air_t)
-		var target := land_target + roundf((pitch - land_target) / TAU) * TAU
+		var raw := raw_angle_for(land_target, twisted())
+		var target := raw + roundf((pitch - raw) / TAU) * TAU
 		var l_need := i * (target - pitch) / t_left
 		var rate := assist_rate * (1.5 if timing == "perfect" else (0.6 if timing == "late" else 1.0))
-		l_pitch = lerpf(l_pitch, l_need, 1.0 - exp(-rate * dt))
+		if not locked:
+			l_pitch = lerpf(l_pitch, l_need, 1.0 - exp(-rate * dt))
 	omega_pitch = l_pitch / i
+	if locked and absf(flip_input) < 0.001:
+		# (only while the player is not rotating him: control stays theirs)
+		omega_pitch = _steer_to_lock(omega_pitch, dt)
+		l_pitch = omega_pitch * i
 	pitch += omega_pitch * dt
 	# Count completed rotations.
 	# (measured from the take-off orientation, minus the set's quarter turns)
@@ -367,7 +422,8 @@ func update_air(dt: float, tuck_input: float = 0.0, grab_input: String = "",
 	# Twist: arms/legs in (tuck) -> smaller long-axis inertia -> faster.
 	if absf(twist_input) > 0.001:
 		_player_twist_controlled = true
-		l_twist = clampf(l_twist + twist_input * twist_control_torque * dt, -twist_l_max, twist_l_max)
+		var t_against := 2.0 if signf(twist_input) != signf(l_twist) and absf(l_twist) > 0.3 else 1.0
+		l_twist = clampf(l_twist + twist_input * twist_control_torque * t_against * dt, -twist_l_max, twist_l_max)
 	if _player_twist_controlled:
 		var old_yaw := yaw
 		var it := lerpf(i_twist_open, i_twist_in, maxf(tuck, 0.5))
@@ -451,8 +507,67 @@ func tuck_hint(open_before: float = 1.6) -> float:
 	return 1.0 if left > open_before else 0.0
 
 
+## Half a twist about the long axis turns the face the other way round.
+func twisted(at_yaw: float = NAN) -> bool:
+	var y := yaw if is_nan(at_yaw) else at_yaw
+	return absf(wrapf(y, -PI, PI)) > PI * 0.5
+
+
+## Somersault angle as the body FACES the line: + face-down (chest side),
+## - face-up (back side). Equal to pitch unless twisted half a turn.
+func facing_pitch() -> float:
+	return -pitch if twisted() else pitch
+
+
+## Raw pitch that shows a facing angle with/without a half twist.
+static func raw_angle_for(facing: float, is_twisted: bool) -> float:
+	return -facing if is_twisted else facing
+
+
 func pitch_error() -> float:
-	return wrapf(pitch - land_target, -PI, PI)
+	return wrapf(facing_pitch() - land_target, -PI, PI)
+
+
+## Yaw expected at touchdown (a set twist still finishing, or a held one).
+func _yaw_at(t_left: float) -> float:
+	if _player_twist_controlled:
+		return yaw + l_twist / lerpf(i_twist_open, i_twist_in, maxf(tuck, 0.5)) * t_left
+	if l_twist != 0.0:
+		return twist_target
+	return yaw
+
+
+## Left hand: lock the landing position late in the jump. t_left: s to
+## touchdown. Returns "early" (outside the window, not locked) or "locked".
+## The target is the chosen position on the turn the body is heading for,
+## so a flip in progress lands after the rotation it is in.
+func lock_landing(pose_id: String, t_left: float) -> String:
+	if pose_id == "feet":
+		pose_id = ""
+	if t_left > LOCK_WINDOW:
+		return "early"
+	locked = true
+	lock_pose = pose_id
+	lock_eta = t_left
+	lock_quality = "perfect" if t_left <= PERFECT_LOCK else "ok"
+	queued_pose = pose_id
+	land_target = POSE_ANGLE.get(pose_id, 0.0)
+	var i := lerpf(i_layout, i_tuck, tuck)
+	var free_pitch := pitch + l_pitch / i * t_left
+	var raw := raw_angle_for(land_target, twisted(_yaw_at(t_left)))
+	lock_target = raw + roundf((free_pitch - raw) / TAU) * TAU
+	return "locked"
+
+
+## Uniform angular acceleration that puts the body on the lock target at
+## touchdown, limited to what the body can do (LOCK_STEER).
+func _steer_to_lock(omega: float, dt: float) -> float:
+	var t := maxf(land_eta, 0.04)
+	if land_eta == INF:
+		t = maxf(0.04, set_T - air_t)
+	var miss := pitch + omega * t - lock_target
+	var alpha := clampf(-2.0 * miss / (t * t), -LOCK_STEER, LOCK_STEER)
+	return omega + alpha * dt
 
 
 func can_land() -> bool:
@@ -469,14 +584,34 @@ func _twist_ok() -> bool:
 ## miss is not too big), with a balance hit.
 func landing_outcome() -> String:
 	var e := pitch_error()
+	bail_kind = ""
 	if absf(e) < LAND_TOLERANCE and _twist_ok():
 		return "clean"
-	if absf(e) < SAVE_MAX or (absf(e) < LAND_TOLERANCE and not _twist_ok()):
-		var a := wrapf(pitch, -PI, PI)
-		if absf(a) < PI * 0.25:
-			return "save_feet" if land_target != 0.0 else ("save_chest" if e > 0.0 else "save_back")
+	# The chosen position wins when the rotation is close enough.
+	if queued_pose != "" and queued_pose != "feet" and absf(e) < CHOICE_WINDOW \
+			and absf(wrapf(yaw, -PI * 0.5, PI * 0.5)) < CHOICE_WINDOW:
+		return "save_" + queued_pose
+	if absf(e) >= SAVE_MAX:
+		bail_kind = _miss_kind(e)
+		return "bail"
+	# Further off: the position the body is actually in. The facing angle is
+	# measured from the planned one along the miss (no wrap-around), so an
+	# over-rotated chest can never read as the back or the other way round.
+	var a := land_target + e
+	if absf(a) < LIE_MIN:
+		if land_target != 0.0:
+			return "save_feet"
+		return "save_chest" if e > 0.0 else "save_back"
+	if absf(a) <= LIE_MAX:
 		return "save_chest" if a > 0.0 else "save_back"
+	bail_kind = _miss_kind(e)
 	return "bail"
+
+
+## Over- or under-rotated, from the miss and the spin direction.
+func _miss_kind(e: float) -> String:
+	var spin := signf(l_pitch) if absf(l_pitch) > 0.5 else signf(e)
+	return "over" if signf(e) == spin else "under"
 
 
 ## Call at touchdown on the feet. Returns false for a bail.
@@ -499,14 +634,16 @@ func on_land() -> bool:
 		where_silent()
 		return true
 	if last_outcome == "bail":
-		_bail("Over/under-rotated")
+		_bail({"over": "Over-rotated", "under": "Under-rotated"}.get(bail_kind, "Over/under-rotated"))
 		return false
 	if last_outcome != "clean":
 		var where: String = last_outcome.trim_prefix("save_")
+		var chosen := where == queued_pose
 		queued_pose = "" if where == "feet" else where
 		landing_pose = queued_pose
-		_say("Saved on the %s! %s" % [where, "+ ".join(performed)] if not performed.is_empty() else "Saved on the %s!" % where)
-		_finish_air(0.5)
+		var head := ("Sketchy %s landing!" % where) if chosen else ("Saved on the %s!" % where)
+		_say("%s %s" % [head, "+ ".join(performed)] if not performed.is_empty() else head)
+		_finish_air(0.75 if chosen else 0.5)
 		return true
 	landing_pose = queued_pose
 	_finish_air(1.0)
@@ -522,6 +659,8 @@ func where_silent() -> void:
 
 
 func _finish_air(points_scale: float) -> void:
+	locked = false
+	land_eta = INF
 	ref = null
 	grab = ""
 	grab_w = 0.0
@@ -544,12 +683,15 @@ func _finish_air(points_scale: float) -> void:
 		for n in performed:
 			base += _points_for(n)
 		var mult := 1.0 + 0.5 * (performed.size() - 1)
-		var pts := int(base * mult * points_scale)
+		var lock_bonus := 1.25 if lock_quality == "perfect" else 1.0
+		var pts := int(base * mult * points_scale * lock_bonus)
 		score += pts
 		tricks_landed += performed.size()
 		best_combo = maxi(best_combo, performed.size())
 		if points_scale >= 1.0:
 			var tag: String = {"perfect": "  PERFECT TIMING", "late": "  late"}.get(timing, "")
+			if lock_quality == "perfect":
+				tag += "  PERFECT LOCK"
 			_say("%s  +%d%s%s" % [" + ".join(performed), pts, ("  x%.1f" % mult) if performed.size() > 1 else "", tag])
 		landed.emit(performed.duplicate(), pts)
 	performed.clear()
@@ -605,6 +747,9 @@ func say(text: String) -> void:
 
 
 func reset() -> void:
+	locked = false
+	lock_pose = ""
+	land_eta = INF
 	ref = null
 	grab = ""
 	grab_w = 0.0
