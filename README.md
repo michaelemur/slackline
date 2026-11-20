@@ -53,6 +53,26 @@ straight into the position.
 then let go as it starts coming up. Lower **Balance assist** in the lab to make
 balancing fully manual.
 
+## Play on a phone (web version)
+
+Every push to `main` on GitHub rebuilds the game for the browser and publishes
+it to GitHub Pages (`.github/workflows/deploy-web.yml`). It takes about 2–4
+minutes. Then open the Pages link on the phone, hold it sideways and reload.
+The touch controls appear automatically on touchscreens. "Add to Home Screen"
+makes it open full screen.
+
+Build the web version locally (needs the Godot 4.7.2 web export templates):
+
+```bash
+godot --headless --path . --import
+godot --headless --path . --export-release "Web" build/web/index.html
+python3 -m http.server 8765 --directory build/web
+```
+
+The web build is single-threaded, so it works on plain static hosting with no
+special server headers. Browsers use Godot's Compatibility (WebGL 2) renderer,
+so lighting can look slightly different from the iOS build.
+
 ## Tests
 
 ```bash
